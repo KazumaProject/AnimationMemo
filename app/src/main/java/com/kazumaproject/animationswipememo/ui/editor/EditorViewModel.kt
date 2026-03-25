@@ -7,7 +7,6 @@ import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import android.util.Log
 import com.kazumaproject.animationswipememo.di.AppContainer
 import com.kazumaproject.animationswipememo.domain.export.AnimationExporter
 import com.kazumaproject.animationswipememo.domain.export.ExportRequest
@@ -156,28 +155,16 @@ class EditorViewModel(
     }
 
     fun openBlockEditor(blockId: String) {
-        Log.d(
-            "EditorViewModel",
-            "openBlockEditor blockId=$blockId previousSelected=${selectedBlockIdState.value} sheetVisible=${editorSheetVisibleState.value}"
-        )
         selectedBlockIdState.value = blockId
         editorSheetVisibleState.value = true
     }
 
     fun startBlockDrag(blockId: String) {
-        Log.d(
-            "EditorViewModel",
-            "startBlockDrag blockId=$blockId previousSelected=${selectedBlockIdState.value} sheetVisible=${editorSheetVisibleState.value}"
-        )
         selectedBlockIdState.value = blockId
         editorSheetVisibleState.value = false
     }
 
     fun clearSelection() {
-        Log.d(
-            "EditorViewModel",
-            "clearSelection previousSelected=${selectedBlockIdState.value} sheetVisible=${editorSheetVisibleState.value}"
-        )
         selectedBlockIdState.value = null
     }
 
@@ -265,10 +252,6 @@ class EditorViewModel(
     }
 
     fun hideEditorSheet() {
-        Log.d(
-            "EditorViewModel",
-            "hideEditorSheet selected=${selectedBlockIdState.value} sheetVisible=${editorSheetVisibleState.value}"
-        )
         editorSheetVisibleState.value = false
     }
 
@@ -300,6 +283,24 @@ class EditorViewModel(
     fun updateSelectedBlockFontFamily(fontFamily: MemoFontFamily) {
         updateSelectedBlock { block ->
             block.copy(textStyle = block.textStyle.copy(fontFamily = fontFamily))
+        }
+    }
+
+    fun toggleSelectedBlockBold() {
+        updateSelectedBlock { block ->
+            block.copy(textStyle = block.textStyle.copy(isBold = !block.textStyle.isBold))
+        }
+    }
+
+    fun toggleSelectedBlockItalic() {
+        updateSelectedBlock { block ->
+            block.copy(textStyle = block.textStyle.copy(isItalic = !block.textStyle.isItalic))
+        }
+    }
+
+    fun toggleSelectedBlockUnderline() {
+        updateSelectedBlock { block ->
+            block.copy(textStyle = block.textStyle.copy(isUnderline = !block.textStyle.isUnderline))
         }
     }
 

@@ -77,6 +77,9 @@ private fun encodeBlocks(blocks: List<MemoBlock>): String {
                 put("textColor", block.textStyle.textColor)
                 put("textAlign", block.textStyle.textAlign.name)
                 put("fontFamily", block.textStyle.fontFamily.name)
+                put("isBold", block.textStyle.isBold)
+                put("isItalic", block.textStyle.isItalic)
+                put("isUnderline", block.textStyle.isUnderline)
                 put("imageUri", block.imageUri)
                 put("strokes", strokesJson)
             }
@@ -121,7 +124,10 @@ private fun decodeBlocks(json: String): List<MemoBlock> {
                             ),
                             fontFamily = MemoFontFamily.valueOf(
                                 item.optString("fontFamily", MemoFontFamily.SystemSerif.name)
-                            )
+                            ),
+                            isBold = item.optBoolean("isBold", false),
+                            isItalic = item.optBoolean("isItalic", false),
+                            isUnderline = item.optBoolean("isUnderline", false)
                         ),
                         imageUri = item.optString("imageUri").ifBlank { null },
                         strokes = strokes

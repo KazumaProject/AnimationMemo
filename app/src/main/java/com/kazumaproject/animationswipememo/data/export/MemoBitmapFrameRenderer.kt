@@ -7,6 +7,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
+import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
 import android.text.Layout
@@ -19,7 +20,7 @@ import com.kazumaproject.animationswipememo.domain.model.MemoBlockType
 import com.kazumaproject.animationswipememo.domain.model.MemoDraft
 import com.kazumaproject.animationswipememo.domain.model.MemoTextAlign
 import com.kazumaproject.animationswipememo.domain.model.resolvedContentAspectRatio
-import com.kazumaproject.animationswipememo.platform.toTypeface
+import com.kazumaproject.animationswipememo.platform.toStyledTypeface
 import kotlin.math.max
 
 class MemoBitmapFrameRenderer(
@@ -123,7 +124,9 @@ class MemoBitmapFrameRenderer(
             alpha = (frame.alpha.coerceIn(0f, 1f) * 255f).toInt()
             textSize = (cardRect.width() * 0.067f) * (block.textStyle.fontSize / 28f)
             isSubpixelText = true
-            typeface = block.textStyle.fontFamily.toTypeface(context)
+            typeface = block.textStyle.toStyledTypeface(context)
+            isUnderlineText = block.textStyle.isUnderline
+            isFakeBoldText = block.textStyle.isBold && typeface.style == Typeface.NORMAL
             if (frame.glowRadiusPx > 0f) {
                 setShadowLayer(
                     frame.glowRadiusPx * (cardRect.width() / 480f),

@@ -3,7 +3,6 @@ package com.kazumaproject.animationswipememo.ui.editor
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
-import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.LinearEasing
@@ -151,6 +150,9 @@ fun EditorScreen(
                 onAnimationChange = viewModel::updateSelectedBlockAnimation,
                 onFontSizeChange = viewModel::updateSelectedBlockFontSize,
                 onFontFamilyChange = viewModel::updateSelectedBlockFontFamily,
+                onToggleBold = viewModel::toggleSelectedBlockBold,
+                onToggleItalic = viewModel::toggleSelectedBlockItalic,
+                onToggleUnderline = viewModel::toggleSelectedBlockUnderline,
                 onWidthChange = viewModel::updateSelectedBlockWidth,
                 onHeightChange = viewModel::updateSelectedBlockHeight,
                 onDeleteBlock = viewModel::deleteSelectedBlock,
@@ -185,15 +187,7 @@ fun EditorScreen(
                         requireUnconsumed = false,
                         pass = PointerEventPass.Initial
                     )
-                    Log.d(
-                        "EditorScreen",
-                        "rootDown position=${down.position} consumed=${down.isConsumed} selected=${uiState.selectedBlockId} sheet=${uiState.isEditorSheetVisible}"
-                    )
                     val up = waitForUpOrCancellation(pass = PointerEventPass.Final)
-                    Log.d(
-                        "EditorScreen",
-                        "rootUp position=${up?.position} consumed=${up?.isConsumed} selected=${uiState.selectedBlockId} sheet=${uiState.isEditorSheetVisible}"
-                    )
                     if (up != null && !up.isConsumed) {
                         dismissTransientInput()
                         viewModel.clearSelection()
@@ -391,6 +385,9 @@ private fun BlockEditorSheet(
     onAnimationChange: (AnimationStyle) -> Unit,
     onFontSizeChange: (Float) -> Unit,
     onFontFamilyChange: (MemoFontFamily) -> Unit,
+    onToggleBold: () -> Unit,
+    onToggleItalic: () -> Unit,
+    onToggleUnderline: () -> Unit,
     onWidthChange: (Float) -> Unit,
     onHeightChange: (Float) -> Unit,
     onDeleteBlock: () -> Unit,
@@ -468,6 +465,20 @@ private fun BlockEditorSheet(
             }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
+                    text = "Style",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                MemoTextStyleChips(
+                    isBold = block.textStyle.isBold,
+                    isItalic = block.textStyle.isItalic,
+                    isUnderline = block.textStyle.isUnderline,
+                    onToggleBold = onToggleBold,
+                    onToggleItalic = onToggleItalic,
+                    onToggleUnderline = onToggleUnderline
+                )
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
                     text = "Font size: ${block.textStyle.fontSize.toInt()}",
                     style = MaterialTheme.typography.titleMedium
                 )
@@ -539,6 +550,39 @@ private fun MemoFontFamilyChips(
                 }
             )
         }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun MemoTextStyleChips(
+    isBold: Boolean,
+    isItalic: Boolean,
+    isUnderline: Boolean,
+    onToggleBold: () -> Unit,
+    onToggleItalic: () -> Unit,
+    onToggleUnderline: () -> Unit
+) {
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        FilterChip(
+            selected = isBold,
+            onClick = onToggleBold,
+            label = { Text("Bold") }
+        )
+        FilterChip(
+            selected = isItalic,
+            onClick = onToggleItalic,
+            label = { Text("Italic") }
+        )
+        FilterChip(
+            selected = isUnderline,
+            onClick = onToggleUnderline,
+            label = { Text("Underline") }
+        )
     }
 }
 

@@ -9,14 +9,20 @@ enum class MemoTextAlign(val displayName: String) {
 enum class MemoFontFamily(val displayName: String) {
     SystemSerif("System Serif"),
     MPlusRounded1c("M PLUS Rounded 1c"),
-    ZenOldMincho("Zen Old Mincho")
+    ZenOldMincho("Zen Old Mincho"),
+    ZenMaruGothic("Zen Maru Gothic"),
+    KaiseiDecol("Kaisei Decol"),
+    Yomogi("Yomogi")
 }
 
 data class TextStyleSetting(
     val fontSize: Float = 28f,
     val textColor: Int = DEFAULT_LIGHT_TEXT_COLOR,
     val textAlign: MemoTextAlign = MemoTextAlign.Center,
-    val fontFamily: MemoFontFamily = MemoFontFamily.SystemSerif
+    val fontFamily: MemoFontFamily = MemoFontFamily.SystemSerif,
+    val isBold: Boolean = false,
+    val isItalic: Boolean = false,
+    val isUnderline: Boolean = false
 ) {
     companion object {
         const val MIN_FONT_SIZE = 16f

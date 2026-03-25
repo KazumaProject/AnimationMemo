@@ -53,7 +53,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,6 +65,9 @@ import com.kazumaproject.animationswipememo.domain.model.MemoBlockType
 import com.kazumaproject.animationswipememo.domain.model.MemoDraft
 import com.kazumaproject.animationswipememo.domain.model.fitContentSize
 import com.kazumaproject.animationswipememo.domain.model.resolvedContentAspectRatio
+import com.kazumaproject.animationswipememo.platform.composeFontStyle
+import com.kazumaproject.animationswipememo.platform.composeFontWeight
+import com.kazumaproject.animationswipememo.platform.composeTextDecoration
 import com.kazumaproject.animationswipememo.platform.toComposeFontFamily
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -304,6 +309,9 @@ private fun ThumbnailTextBlock(
             fontSize = (block.textStyle.fontSize * 0.24f).sp,
             lineHeight = (block.textStyle.fontSize * 0.28f).sp,
             fontFamily = block.textStyle.fontFamily.toComposeFontFamily(),
+            fontWeight = block.textStyle.composeFontWeight(),
+            fontStyle = block.textStyle.composeFontStyle(),
+            textDecoration = block.textStyle.composeTextDecoration(),
             color = Color(block.textStyle.resolvedTextColor(darkTheme)),
             textAlign = textAlign,
             maxLines = 2,
