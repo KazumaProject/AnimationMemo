@@ -3,6 +3,7 @@ package com.kazumaproject.animationswipememo.ui.editor
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.LinearEasing
@@ -12,6 +13,9 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -24,6 +28,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.List
+import androidx.compose.material.icons.automirrored.outlined.NoteAdd
 import androidx.compose.material.icons.outlined.AddBox
 import androidx.compose.material.icons.outlined.AutoFixHigh
 import androidx.compose.material.icons.outlined.DeleteSweep
@@ -36,7 +41,9 @@ import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -56,13 +63,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kazumaproject.animationswipememo.domain.model.AnimationStyle
 import com.kazumaproject.animationswipememo.domain.model.MemoBlockType
+import com.kazumaproject.animationswipememo.domain.model.MemoFontFamily
 import com.kazumaproject.animationswipememo.domain.model.TextStyleSetting
 import com.kazumaproject.animationswipememo.domain.model.ThemeMode
 import com.kazumaproject.animationswipememo.ui.components.AnimationStyleChips
@@ -81,6 +92,8 @@ fun EditorScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val hapticFeedback = LocalHapticFeedback.current
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val systemDark = isSystemInDarkTheme()
     val isDarkTheme = when (uiState.settings.themeMode) {
         ThemeMode.System -> systemDark
@@ -117,9 +130,17 @@ fun EditorScreen(
     val sheetColor = MaterialTheme.colorScheme.surface.copy(alpha = sheetOpacity)
     val scrimAlpha = ((1f - sheetOpacity) * 0.22f) + 0.04f
 
+    fun dismissTransientInput() {
+        focusManager.clearFocus(force = true)
+        keyboardController?.hide()
+    }
+
     if (uiState.isEditorSheetVisible && uiState.selectedBlock != null) {
         ModalBottomSheet(
-            onDismissRequest = viewModel::hideEditorSheet,
+            onDismissRequest = {
+                dismissTransientInput()
+                viewModel.hideEditorSheet()
+            },
             modifier = Modifier.imePadding(),
             containerColor = sheetColor,
             scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = scrimAlpha)
@@ -129,10 +150,14 @@ fun EditorScreen(
                 onTextChange = viewModel::updateSelectedBlockText,
                 onAnimationChange = viewModel::updateSelectedBlockAnimation,
                 onFontSizeChange = viewModel::updateSelectedBlockFontSize,
+                onFontFamilyChange = viewModel::updateSelectedBlockFontFamily,
                 onWidthChange = viewModel::updateSelectedBlockWidth,
                 onHeightChange = viewModel::updateSelectedBlockHeight,
                 onDeleteBlock = viewModel::deleteSelectedBlock,
-                onClose = viewModel::hideEditorSheet
+                onClose = {
+                    dismissTransientInput()
+                    viewModel.hideEditorSheet()
+                }
             )
         }
     }
@@ -151,19 +176,32 @@ fun EditorScreen(
         }
     }
 
-    androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize()) {
+    androidx.compose.foundation.layout.Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(uiState.selectedBlockId, uiState.isEditorSheetVisible) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(
+                        requireUnconsumed = false,
+                        pass = PointerEventPass.Initial
+                    )
+                    Log.d(
+                        "EditorScreen",
+                        "rootDown position=${down.position} consumed=${down.isConsumed} selected=${uiState.selectedBlockId} sheet=${uiState.isEditorSheetVisible}"
+                    )
+                    val up = waitForUpOrCancellation(pass = PointerEventPass.Final)
+                    Log.d(
+                        "EditorScreen",
+                        "rootUp position=${up?.position} consumed=${up?.isConsumed} selected=${uiState.selectedBlockId} sheet=${uiState.isEditorSheetVisible}"
+                    )
+                }
+            }
+    ) {
         Scaffold(
             topBar = {
                 TopAppBar(
                     title = {
-                        Column {
-                            Text(if (uiState.isExistingMemo) "Memo canvas" else "New memo")
-                            Text(
-                                text = "Compose text, images, and reusable handwriting on one note.",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                        Text(if (uiState.isExistingMemo) "Memo" else "New memo")
                     },
                     navigationIcon = {
                         IconButton(onClick = onOpenList) {
@@ -174,6 +212,9 @@ fun EditorScreen(
                         }
                     },
                     actions = {
+                        IconButton(onClick = viewModel::saveMemo) {
+                            Icon(Icons.Outlined.Save, contentDescription = "Save memo")
+                        }
                         IconButton(onClick = viewModel::toggleToolPaletteVisibility) {
                             Icon(
                                 imageVector = if (uiState.isToolPaletteVisible) {
@@ -189,6 +230,16 @@ fun EditorScreen(
                         }
                     }
                 )
+            },
+            floatingActionButton = {
+                if (uiState.isToolPaletteVisible) {
+                    FloatingActionButton(onClick = viewModel::createNewMemo) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.NoteAdd,
+                            contentDescription = "Create new memo"
+                        )
+                    }
+                }
             },
             snackbarHost = { SnackbarHost(snackbarHostState) }
         ) { innerPadding ->
@@ -208,21 +259,22 @@ fun EditorScreen(
                     modifier = Modifier.padding(innerPadding),
                     onOpenBlockEditor = viewModel::openBlockEditor,
                     onCanvasTap = {
+                        dismissTransientInput()
                         viewModel.clearSelection()
                         viewModel.hideEditorSheet()
                     },
-                    onBlockDragStart = viewModel::startBlockDrag,
+                    onBlockDragStart = { blockId ->
+                        dismissTransientInput()
+                        viewModel.startBlockDrag(blockId)
+                    },
                     onBlockDrag = viewModel::moveBlock,
                     onAddText = viewModel::addTextBlock,
                     onAddImage = { imagePicker.launch(arrayOf("image/*")) },
                     onOpenDrawingLibrary = viewModel::openDrawingLibrary,
                     onEditSelected = viewModel::showEditorSheet,
-                    onSave = viewModel::saveMemo,
                     onExportGif = { viewModel.exportGif(isDarkTheme) },
                     onExportPng = { viewModel.exportPng(isDarkTheme) },
-                    onDiscard = viewModel::discardMemo,
-                    onOpenList = onOpenList,
-                    onOpenSettings = onOpenSettings
+                    onDiscard = viewModel::discardMemo
                 )
             }
         }
@@ -259,12 +311,9 @@ private fun EditorCanvasContent(
     onAddImage: () -> Unit,
     onOpenDrawingLibrary: () -> Unit,
     onEditSelected: () -> Unit,
-    onSave: () -> Unit,
     onExportGif: () -> Unit,
     onExportPng: () -> Unit,
-    onDiscard: () -> Unit,
-    onOpenList: () -> Unit,
-    onOpenSettings: () -> Unit
+    onDiscard: () -> Unit
 ) {
     val draft = uiState.draft ?: return
     val transition = rememberInfiniteTransition(label = "canvasAnimation")
@@ -298,7 +347,6 @@ private fun EditorCanvasContent(
                 ToolButton("Image", Icons.Outlined.Image, onAddImage)
                 ToolButton("Handwriting", Icons.Outlined.AutoFixHigh, onOpenDrawingLibrary)
                 ToolButton("Edit", Icons.Outlined.Draw, onEditSelected)
-                ToolButton("Save", Icons.Outlined.Save, onSave)
                 ToolButton("GIF", Icons.Outlined.FileDownload, onExportGif)
                 ToolButton("PNG", Icons.Outlined.Image, onExportPng)
                 ToolButton("Discard", Icons.Outlined.DeleteSweep, onDiscard)
@@ -337,6 +385,7 @@ private fun BlockEditorSheet(
     onTextChange: (String) -> Unit,
     onAnimationChange: (AnimationStyle) -> Unit,
     onFontSizeChange: (Float) -> Unit,
+    onFontFamilyChange: (MemoFontFamily) -> Unit,
     onWidthChange: (Float) -> Unit,
     onHeightChange: (Float) -> Unit,
     onDeleteBlock: () -> Unit,
@@ -404,6 +453,16 @@ private fun BlockEditorSheet(
         if (block.type == MemoBlockType.Text) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
+                    text = "Font",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                MemoFontFamilyChips(
+                    selected = block.textStyle.fontFamily,
+                    onSelect = onFontFamilyChange
+                )
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
                     text = "Font size: ${block.textStyle.fontSize.toInt()}",
                     style = MaterialTheme.typography.titleMedium
                 )
@@ -448,6 +507,32 @@ private fun BlockEditorSheet(
             TextButton(onClick = onClose) {
                 Text("Done")
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun MemoFontFamilyChips(
+    selected: MemoFontFamily,
+    onSelect: (MemoFontFamily) -> Unit
+) {
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        MemoFontFamily.entries.forEach { fontFamily ->
+            FilterChip(
+                selected = fontFamily == selected,
+                onClick = { onSelect(fontFamily) },
+                label = {
+                    Text(
+                        text = fontFamily.displayName,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
+            )
         }
     }
 }

@@ -3,16 +3,17 @@ package com.kazumaproject.animationswipememo.ui.components
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.util.Log
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitDragOrCancellation
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitTouchSlopOrCancellation
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -30,6 +31,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -37,7 +39,7 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.ContentScale
@@ -45,7 +47,6 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -57,6 +58,7 @@ import com.kazumaproject.animationswipememo.domain.model.MemoBlockType
 import com.kazumaproject.animationswipememo.domain.model.MemoDraft
 import com.kazumaproject.animationswipememo.domain.model.MemoTextAlign
 import com.kazumaproject.animationswipememo.domain.model.resolvedContentAspectRatio
+import com.kazumaproject.animationswipememo.platform.toComposeFontFamily
 import kotlin.math.roundToInt
 
 @Composable
@@ -84,11 +86,53 @@ fun PaperMemoCanvas(
                 canvasWidthPx = it.width.coerceAtLeast(1)
                 canvasHeightPx = it.height.coerceAtLeast(1)
             }
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onCanvasTap
-            )
+            .pointerInput(memo.id, memo.updatedAt) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(
+                        requireUnconsumed = false,
+                        pass = PointerEventPass.Final
+                    )
+                    Log.d(
+                        "PaperMemoCanvas",
+                        "canvasRootDown position=${down.position} consumed=${down.isConsumed} selectedBlockId=$selectedBlockId"
+                    )
+                    if (down.isConsumed) {
+                        val up = waitForUpOrCancellation(pass = PointerEventPass.Final)
+                        Log.d(
+                            "PaperMemoCanvas",
+                            "canvasRootUpAfterConsumed position=${up?.position} consumed=${up?.isConsumed} selectedBlockId=$selectedBlockId"
+                        )
+                    } else {
+                        val up = waitForUpOrCancellation(pass = PointerEventPass.Final)
+                        Log.d(
+                            "PaperMemoCanvas",
+                            "canvasRootUp position=${up?.position} consumed=${up?.isConsumed} selectedBlockId=$selectedBlockId"
+                        )
+                        if (up != null && !up.isConsumed) {
+                            val tappedBlockId = memo.blocks
+                                .asReversed()
+                                .firstOrNull { block ->
+                                    blockBounds(
+                                        block = block,
+                                        canvasWidthPx = canvasWidthPx,
+                                        canvasHeightPx = canvasHeightPx,
+                                        progress = progress
+                                    ).contains(up.position)
+                                }
+                                ?.id
+                            Log.d(
+                                "PaperMemoCanvas",
+                                "canvasTap up=${up.position} selectedBlockId=$selectedBlockId tappedBlockId=$tappedBlockId"
+                            )
+                            if (tappedBlockId != null) {
+                                onBlockTap(tappedBlockId)
+                            } else {
+                                onCanvasTap()
+                            }
+                        }
+                    }
+                }
+            }
             .drawBehind {
                 val lineColor = Color(paper.lineArgb)
                 val accentColor = Color(paper.accentArgb)
@@ -127,7 +171,6 @@ fun PaperMemoCanvas(
                     darkTheme = darkTheme,
                     canvasWidthPx = canvasWidthPx,
                     canvasHeightPx = canvasHeightPx,
-                    onBlockTap = onBlockTap,
                     onBlockDragStart = onBlockDragStart,
                     onBlockDrag = onBlockDrag
                 )
@@ -138,7 +181,6 @@ fun PaperMemoCanvas(
                     progress = progress,
                     canvasWidthPx = canvasWidthPx,
                     canvasHeightPx = canvasHeightPx,
-                    onBlockTap = onBlockTap,
                     onBlockDragStart = onBlockDragStart,
                     onBlockDrag = onBlockDrag
                 )
@@ -149,7 +191,6 @@ fun PaperMemoCanvas(
                     progress = progress,
                     canvasWidthPx = canvasWidthPx,
                     canvasHeightPx = canvasHeightPx,
-                    onBlockTap = onBlockTap,
                     onBlockDragStart = onBlockDragStart,
                     onBlockDrag = onBlockDrag
                 )
@@ -166,7 +207,6 @@ private fun TextBlockView(
     darkTheme: Boolean,
     canvasWidthPx: Int,
     canvasHeightPx: Int,
-    onBlockTap: (String) -> Unit,
     onBlockDragStart: (String) -> Unit,
     onBlockDrag: (String, Float, Float) -> Unit
 ) {
@@ -174,7 +214,9 @@ private fun TextBlockView(
     val frame = MemoAnimationEngine.frameAt(block.animationStyle, block.text, progress)
     val displayedText = frame.displayedText(block.text.ifBlank { "Text" })
     val blockWidthPx = (canvasWidthPx * block.widthFraction).roundToInt().coerceAtLeast(120)
+    val blockHeightPx = (canvasHeightPx * block.heightFraction).roundToInt().coerceAtLeast(56)
     val blockWidthDp = with(density) { blockWidthPx.toDp() }
+    val blockHeightDp = with(density) { blockHeightPx.toDp() }
     val offsetX = (block.normalizedX * canvasWidthPx - (blockWidthPx / 2f) + frame.offsetXPx).roundToInt()
     val offsetY = (block.normalizedY * canvasHeightPx + frame.offsetYPx).roundToInt()
     val textAlign = when (block.textStyle.textAlign) {
@@ -183,8 +225,7 @@ private fun TextBlockView(
         MemoTextAlign.End -> TextAlign.End
     }
 
-    Text(
-        text = displayedText,
+    Box(
         modifier = blockGestureModifier(
             block = block,
             selected = selected,
@@ -192,8 +233,7 @@ private fun TextBlockView(
             canvasHeightPx = canvasHeightPx,
             offsetX = offsetX,
             offsetY = offsetY,
-            widthModifier = Modifier.width(blockWidthDp),
-            onBlockTap = onBlockTap,
+            widthModifier = Modifier.size(blockWidthDp, blockHeightDp),
             onBlockDragStart = onBlockDragStart,
             onBlockDrag = onBlockDrag
         ).graphicsLayer {
@@ -201,10 +241,17 @@ private fun TextBlockView(
             scaleX = frame.scale
             scaleY = frame.scale
             rotationZ = frame.rotationDeg
-        },
-        style = textStyleFor(block = block, glowRadius = frame.glowRadiusPx, darkTheme = darkTheme),
-        textAlign = textAlign
-    )
+        }
+    ) {
+        Text(
+            text = displayedText,
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.Center),
+            style = textStyleFor(block = block, glowRadius = frame.glowRadiusPx, darkTheme = darkTheme),
+            textAlign = textAlign
+        )
+    }
 }
 
 @Composable
@@ -214,7 +261,6 @@ private fun ImageBlockView(
     progress: Float,
     canvasWidthPx: Int,
     canvasHeightPx: Int,
-    onBlockTap: (String) -> Unit,
     onBlockDragStart: (String) -> Unit,
     onBlockDrag: (String, Float, Float) -> Unit
 ) {
@@ -245,7 +291,6 @@ private fun ImageBlockView(
             offsetX = offsetX,
             offsetY = offsetY,
             widthModifier = Modifier.size(widthDp, heightDp),
-            onBlockTap = onBlockTap,
             onBlockDragStart = onBlockDragStart,
             onBlockDrag = onBlockDrag
         ).graphicsLayer {
@@ -298,7 +343,6 @@ private fun DrawingBlockView(
     progress: Float,
     canvasWidthPx: Int,
     canvasHeightPx: Int,
-    onBlockTap: (String) -> Unit,
     onBlockDragStart: (String) -> Unit,
     onBlockDrag: (String, Float, Float) -> Unit
 ) {
@@ -328,7 +372,6 @@ private fun DrawingBlockView(
             offsetX = offsetX,
             offsetY = offsetY,
             widthModifier = Modifier.size(widthDp, heightDp),
-            onBlockTap = onBlockTap,
             onBlockDragStart = onBlockDragStart,
             onBlockDrag = onBlockDrag
         ).graphicsLayer {
@@ -379,7 +422,6 @@ private fun blockGestureModifier(
     offsetX: Int,
     offsetY: Int,
     widthModifier: Modifier,
-    onBlockTap: (String) -> Unit,
     onBlockDragStart: (String) -> Unit,
     onBlockDrag: (String, Float, Float) -> Unit
 ): Modifier {
@@ -398,7 +440,7 @@ private fun blockGestureModifier(
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
                 var dragStarted = false
-                val postSlop = awaitTouchSlopOrCancellation(down.id) { change, over ->
+                val dragChange = awaitTouchSlopOrCancellation(down.id) { change, over ->
                     if (!dragStarted) {
                         dragStarted = true
                         onBlockDragStart(block.id)
@@ -411,18 +453,11 @@ private fun blockGestureModifier(
                     )
                 }
 
-                if (!dragStarted) {
-                    val up = waitForUpOrCancellation()
-                    if (up != null) {
-                        down.consume()
-                        up.consume()
-                        onBlockTap(block.id)
-                    }
-                } else if (postSlop != null) {
-                    var pointerChange = postSlop
-                    while (true) {
-                        val currentChange = pointerChange ?: break
-                        if (currentChange.changedToUpIgnoreConsumed()) break
+                if (!dragStarted || dragChange == null) {
+                    waitForUpOrCancellation()
+                } else {
+                    var currentChange = dragChange
+                    while (currentChange != null && currentChange.pressed) {
                         val delta = currentChange.positionChange()
                         if (delta != Offset.Zero) {
                             currentChange.consume()
@@ -432,13 +467,53 @@ private fun blockGestureModifier(
                                 delta.y / canvasHeightPx.toFloat()
                             )
                         }
-                        val event = awaitPointerEvent()
-                        val tracked = event.changes.firstOrNull { it.id == down.id } ?: break
-                        pointerChange = tracked
+                        currentChange = awaitDragOrCancellation(down.id)
                     }
+                    Log.d(
+                        "PaperMemoCanvas",
+                        "blockDragEnd blockId=${block.id} type=${block.type} selected=$selected"
+                    )
                 }
             }
         }
+}
+
+private fun blockBounds(
+    block: MemoBlock,
+    canvasWidthPx: Int,
+    canvasHeightPx: Int,
+    progress: Float
+): Rect {
+    val frame = MemoAnimationEngine.frameAt(block.animationStyle, block.text, progress)
+    val touchSlop = 16f
+    return when (block.type) {
+        MemoBlockType.Text -> {
+            val width = (canvasWidthPx * block.widthFraction).coerceAtLeast(120f)
+            val height = (canvasHeightPx * block.heightFraction).coerceAtLeast(56f)
+            val left = (block.normalizedX * canvasWidthPx) - (width / 2f) + frame.offsetXPx
+            val top = (block.normalizedY * canvasHeightPx) + frame.offsetYPx
+            Rect(
+                left = left - touchSlop,
+                top = top - touchSlop,
+                right = left + width + touchSlop,
+                bottom = top + height + touchSlop
+            )
+        }
+
+        MemoBlockType.Image,
+        MemoBlockType.Drawing -> {
+            val width = (canvasWidthPx * block.widthFraction).coerceAtLeast(80f)
+            val height = (canvasHeightPx * block.heightFraction).coerceAtLeast(80f)
+            val left = (block.normalizedX * canvasWidthPx) - (width / 2f) + frame.offsetXPx
+            val top = (block.normalizedY * canvasHeightPx) - (height / 2f) + frame.offsetYPx
+            Rect(
+                left = left - touchSlop,
+                top = top - touchSlop,
+                right = left + width + touchSlop,
+                bottom = top + height + touchSlop
+            )
+        }
+    }
 }
 
 @Composable
@@ -465,7 +540,7 @@ private fun textStyleFor(
 ): TextStyle {
     val resolvedTextColor = block.textStyle.resolvedTextColor(darkTheme = darkTheme)
     return TextStyle(
-        fontFamily = FontFamily.Serif,
+        fontFamily = block.textStyle.fontFamily.toComposeFontFamily(),
         fontSize = block.textStyle.fontSize.sp,
         lineHeight = (block.textStyle.fontSize * 1.22f).sp,
         color = Color(resolvedTextColor),

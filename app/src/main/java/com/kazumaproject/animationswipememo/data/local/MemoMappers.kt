@@ -4,6 +4,7 @@ import com.kazumaproject.animationswipememo.domain.model.AnimationStyle
 import com.kazumaproject.animationswipememo.domain.model.MemoBlock
 import com.kazumaproject.animationswipememo.domain.model.MemoBlockType
 import com.kazumaproject.animationswipememo.domain.model.MemoDraft
+import com.kazumaproject.animationswipememo.domain.model.MemoFontFamily
 import com.kazumaproject.animationswipememo.domain.model.MemoTextAlign
 import com.kazumaproject.animationswipememo.domain.model.PaperStyle
 import com.kazumaproject.animationswipememo.domain.model.SavedDrawing
@@ -75,6 +76,7 @@ private fun encodeBlocks(blocks: List<MemoBlock>): String {
                 put("fontSize", block.textStyle.fontSize.toDouble())
                 put("textColor", block.textStyle.textColor)
                 put("textAlign", block.textStyle.textAlign.name)
+                put("fontFamily", block.textStyle.fontFamily.name)
                 put("imageUri", block.imageUri)
                 put("strokes", strokesJson)
             }
@@ -116,6 +118,9 @@ private fun decodeBlocks(json: String): List<MemoBlock> {
                             textColor = item.optInt("textColor", 0xFF2D241C.toInt()),
                             textAlign = MemoTextAlign.valueOf(
                                 item.optString("textAlign", MemoTextAlign.Center.name)
+                            ),
+                            fontFamily = MemoFontFamily.valueOf(
+                                item.optString("fontFamily", MemoFontFamily.SystemSerif.name)
                             )
                         ),
                         imageUri = item.optString("imageUri").ifBlank { null },

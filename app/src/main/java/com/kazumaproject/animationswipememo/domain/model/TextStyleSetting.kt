@@ -6,10 +6,17 @@ enum class MemoTextAlign(val displayName: String) {
     End("End")
 }
 
+enum class MemoFontFamily(val displayName: String) {
+    SystemSerif("System Serif"),
+    MPlusRounded1c("M PLUS Rounded 1c"),
+    ZenOldMincho("Zen Old Mincho")
+}
+
 data class TextStyleSetting(
     val fontSize: Float = 28f,
     val textColor: Int = DEFAULT_LIGHT_TEXT_COLOR,
-    val textAlign: MemoTextAlign = MemoTextAlign.Center
+    val textAlign: MemoTextAlign = MemoTextAlign.Center,
+    val fontFamily: MemoFontFamily = MemoFontFamily.SystemSerif
 ) {
     companion object {
         const val MIN_FONT_SIZE = 16f
