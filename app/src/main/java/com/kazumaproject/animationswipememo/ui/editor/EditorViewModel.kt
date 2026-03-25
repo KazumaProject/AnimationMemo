@@ -359,6 +359,22 @@ class EditorViewModel(
         selectedBlockIdState.value = blockId
     }
 
+    fun scaleBlock(blockId: String, scaleFactor: Float) {
+        val draft = draftState.value ?: return
+        val minY = minimumBlockYFor(draft.paperStyle)
+        draftState.value = draft.copy(
+            blocks = draft.blocks.map { block ->
+                if (block.id != blockId) {
+                    block
+                } else {
+                    block.scaledBy(scaleFactor = scaleFactor, minimumY = minY)
+                }
+            },
+            updatedAt = System.currentTimeMillis()
+        )
+        selectedBlockIdState.value = blockId
+    }
+
     fun moveSelectedBlock(deltaXNormalized: Float, deltaYNormalized: Float) {
         val minY = minimumBlockYFor(draftState.value?.paperStyle ?: return)
         updateSelectedBlock { block ->
@@ -543,6 +559,54 @@ class EditorViewModel(
         }
     }
 }
+
+private fun MemoBlock.scaledBy(
+    scaleFactor: Float,
+    minimumY: Float
+): MemoBlock {
+    val safeScale = scaleFactor.takeIf { it.isFinite() && it > 0f } ?: return this
+    val safeWidth = widthFraction.coerceAtLeast(0.0001f)
+    val safeHeight = heightFraction.coerceAtLeast(0.0001f)
+    val safeFontSize = textStyle.fontSize.coerceAtLeast(0.0001f)
+    val minScale = buildList {
+        add(MIN_BLOCK_FRACTION / safeWidth)
+        add(MIN_BLOCK_FRACTION / safeHeight)
+        if (isText) {
+            add(TextStyleSetting.MIN_FONT_SIZE / safeFontSize)
+        }
+    }.maxOrNull() ?: 1f
+    val maxScale = buildList {
+        add(MAX_BLOCK_FRACTION / safeWidth)
+        add(MAX_BLOCK_FRACTION / safeHeight)
+        if (isText) {
+            add(TextStyleSetting.MAX_FONT_SIZE / safeFontSize)
+        }
+    }.minOrNull() ?: 1f
+    val appliedScale = safeScale.coerceIn(minScale, maxScale)
+    val scaledWidth = widthFraction * appliedScale
+    val scaledHeight = heightFraction * appliedScale
+
+    val adjustedY = if (isText) {
+        val centerY = normalizedY + (heightFraction / 2f)
+        (centerY - (scaledHeight / 2f)).coerceIn(minimumY, 0.9f)
+    } else {
+        normalizedY
+    }
+
+    return copy(
+        normalizedY = adjustedY,
+        widthFraction = scaledWidth,
+        heightFraction = scaledHeight,
+        textStyle = if (isText) {
+            textStyle.copy(fontSize = textStyle.fontSize * appliedScale)
+        } else {
+            textStyle
+        }
+    )
+}
+
+private const val MIN_BLOCK_FRACTION = 0.12f
+private const val MAX_BLOCK_FRACTION = 0.9f
 
 private data class PartialEditorUiStateA(
     val draft: MemoDraft?,

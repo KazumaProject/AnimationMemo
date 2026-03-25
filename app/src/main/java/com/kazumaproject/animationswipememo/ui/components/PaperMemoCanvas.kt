@@ -4,10 +4,8 @@ import android.content.Context
 import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.awaitDragOrCancellation
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.awaitTouchSlopOrCancellation
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.defaultMinSize
@@ -32,6 +30,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shadow
@@ -66,6 +65,7 @@ import com.kazumaproject.animationswipememo.platform.composeFontStyle
 import com.kazumaproject.animationswipememo.platform.composeFontWeight
 import com.kazumaproject.animationswipememo.platform.composeTextDecoration
 import com.kazumaproject.animationswipememo.platform.toComposeFontFamily
+import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -80,7 +80,8 @@ fun PaperMemoCanvas(
     onBlockTap: (String) -> Unit,
     onCanvasTap: () -> Unit,
     onBlockDragStart: (String) -> Unit,
-    onBlockDrag: (String, Float, Float) -> Unit
+    onBlockDrag: (String, Float, Float) -> Unit,
+    onBlockScale: (String, Float) -> Unit
 ) {
     val density = LocalDensity.current
     val paper = memo.paperStyle.palette(darkTheme)
@@ -147,7 +148,8 @@ fun PaperMemoCanvas(
                     canvasWidthPx = canvasWidthPx,
                     canvasHeightPx = canvasHeightPx,
                     onBlockDragStart = onBlockDragStart,
-                    onBlockDrag = onBlockDrag
+                    onBlockDrag = onBlockDrag,
+                    onBlockScale = onBlockScale
                 )
 
                 MemoBlockType.Image -> ImageBlockView(
@@ -157,7 +159,8 @@ fun PaperMemoCanvas(
                     canvasWidthPx = canvasWidthPx,
                     canvasHeightPx = canvasHeightPx,
                     onBlockDragStart = onBlockDragStart,
-                    onBlockDrag = onBlockDrag
+                    onBlockDrag = onBlockDrag,
+                    onBlockScale = onBlockScale
                 )
 
                 MemoBlockType.Drawing -> DrawingBlockView(
@@ -167,7 +170,8 @@ fun PaperMemoCanvas(
                     canvasWidthPx = canvasWidthPx,
                     canvasHeightPx = canvasHeightPx,
                     onBlockDragStart = onBlockDragStart,
-                    onBlockDrag = onBlockDrag
+                    onBlockDrag = onBlockDrag,
+                    onBlockScale = onBlockScale
                 )
             }
         }
@@ -183,7 +187,8 @@ private fun TextBlockView(
     canvasWidthPx: Int,
     canvasHeightPx: Int,
     onBlockDragStart: (String) -> Unit,
-    onBlockDrag: (String, Float, Float) -> Unit
+    onBlockDrag: (String, Float, Float) -> Unit,
+    onBlockScale: (String, Float) -> Unit
 ) {
     val density = LocalDensity.current
     val frame = MemoAnimationEngine.frameAt(block.animationStyle, block.text, progress)
@@ -212,7 +217,8 @@ private fun TextBlockView(
                 .width(blockWidthDp)
                 .defaultMinSize(minHeight = minimumBlockHeightDp),
             onBlockDragStart = onBlockDragStart,
-            onBlockDrag = onBlockDrag
+            onBlockDrag = onBlockDrag,
+            onBlockScale = onBlockScale
         ).graphicsLayer {
             alpha = if (block.text.isBlank()) 0.45f else frame.alpha
             scaleX = frame.scale
@@ -239,7 +245,8 @@ private fun ImageBlockView(
     canvasWidthPx: Int,
     canvasHeightPx: Int,
     onBlockDragStart: (String) -> Unit,
-    onBlockDrag: (String, Float, Float) -> Unit
+    onBlockDrag: (String, Float, Float) -> Unit,
+    onBlockScale: (String, Float) -> Unit
 ) {
     val density = LocalDensity.current
     val frame = MemoAnimationEngine.frameAt(block.animationStyle, block.text, progress)
@@ -273,7 +280,8 @@ private fun ImageBlockView(
             offsetY = offsetY,
             widthModifier = Modifier.size(widthDp, heightDp),
             onBlockDragStart = onBlockDragStart,
-            onBlockDrag = onBlockDrag
+            onBlockDrag = onBlockDrag,
+            onBlockScale = onBlockScale
         ).graphicsLayer {
             alpha = frame.alpha
             scaleX = frame.scale
@@ -325,7 +333,8 @@ private fun DrawingBlockView(
     canvasWidthPx: Int,
     canvasHeightPx: Int,
     onBlockDragStart: (String) -> Unit,
-    onBlockDrag: (String, Float, Float) -> Unit
+    onBlockDrag: (String, Float, Float) -> Unit,
+    onBlockScale: (String, Float) -> Unit
 ) {
     val density = LocalDensity.current
     val frame = MemoAnimationEngine.frameAt(block.animationStyle, block.text, progress)
@@ -354,7 +363,8 @@ private fun DrawingBlockView(
             offsetY = offsetY,
             widthModifier = Modifier.size(widthDp, heightDp),
             onBlockDragStart = onBlockDragStart,
-            onBlockDrag = onBlockDrag
+            onBlockDrag = onBlockDrag,
+            onBlockScale = onBlockScale
         ).graphicsLayer {
             alpha = frame.alpha
             scaleX = frame.scale
@@ -404,7 +414,8 @@ private fun blockGestureModifier(
     offsetY: Int,
     widthModifier: Modifier,
     onBlockDragStart: (String) -> Unit,
-    onBlockDrag: (String, Float, Float) -> Unit
+    onBlockDrag: (String, Float, Float) -> Unit,
+    onBlockScale: (String, Float) -> Unit
 ): Modifier {
     return Modifier
         .then(widthModifier)
@@ -420,39 +431,101 @@ private fun blockGestureModifier(
         .pointerInput(block.id, canvasWidthPx, canvasHeightPx) {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
+                val touchSlop = viewConfiguration.touchSlop
+                var activePointerId = down.id
                 var dragStarted = false
-                val dragChange = awaitTouchSlopOrCancellation(down.id) { change, over ->
-                    if (!dragStarted) {
-                        dragStarted = true
+                var transformStarted = false
+                var accumulatedDrag = Offset.Zero
+
+                while (true) {
+                    val event = awaitPointerEvent()
+                    val pressedChanges = event.changes.filter { it.pressed }
+                    if (pressedChanges.isEmpty()) {
+                        break
+                    }
+
+                    if (!transformStarted && !dragStarted && pressedChanges.size >= 2) {
+                        transformStarted = true
                         onBlockDragStart(block.id)
                     }
-                    change.consume()
-                    onBlockDrag(
-                        block.id,
-                        over.x / canvasWidthPx.toFloat(),
-                        over.y / canvasHeightPx.toFloat()
-                    )
-                }
 
-                if (!dragStarted || dragChange == null) {
-                    waitForUpOrCancellation()
-                } else {
-                    var currentChange = dragChange
-                    while (currentChange != null && currentChange.pressed) {
-                        val delta = currentChange.positionChange()
-                        if (delta != Offset.Zero) {
-                            currentChange.consume()
-                            onBlockDrag(
-                                block.id,
-                                delta.x / canvasWidthPx.toFloat(),
-                                delta.y / canvasHeightPx.toFloat()
-                            )
+                    if (transformStarted) {
+                        val zoomChange = calculatePointerZoomChange(event.changes)
+                        if (abs(zoomChange - 1f) > 0.01f) {
+                            onBlockScale(block.id, zoomChange)
                         }
-                        currentChange = awaitDragOrCancellation(down.id)
+                        pressedChanges.forEach { change ->
+                            if (change.positionChange() != Offset.Zero) {
+                                change.consume()
+                            }
+                        }
+                        continue
+                    }
+
+                    val activeChange = event.changes.firstOrNull { it.id == activePointerId }
+                    if (activeChange == null) {
+                        activePointerId = pressedChanges.first().id
+                        continue
+                    }
+
+                    val delta = activeChange.positionChange()
+                    if (!dragStarted) {
+                        accumulatedDrag += delta
+                        if (accumulatedDrag.getDistance() > touchSlop) {
+                            dragStarted = true
+                            onBlockDragStart(block.id)
+                            if (accumulatedDrag != Offset.Zero) {
+                                activeChange.consume()
+                                onBlockDrag(
+                                    block.id,
+                                    accumulatedDrag.x / canvasWidthPx.toFloat(),
+                                    accumulatedDrag.y / canvasHeightPx.toFloat()
+                                )
+                                accumulatedDrag = Offset.Zero
+                            }
+                        }
+                    } else if (delta != Offset.Zero) {
+                        activeChange.consume()
+                        onBlockDrag(
+                            block.id,
+                            delta.x / canvasWidthPx.toFloat(),
+                            delta.y / canvasHeightPx.toFloat()
+                        )
                     }
                 }
             }
         }
+}
+
+private fun calculatePointerZoomChange(changes: List<androidx.compose.ui.input.pointer.PointerInputChange>): Float {
+    val pressedChanges = changes.filter { it.pressed }
+    if (pressedChanges.size < 2) return 1f
+
+    val currentCentroid = averageOffset(pressedChanges.map { it.position })
+    val previousCentroid = averageOffset(pressedChanges.map { it.previousPosition })
+    if (!currentCentroid.isSpecified || !previousCentroid.isSpecified) return 1f
+
+    val currentSpan = pressedChanges
+        .map { (it.position - currentCentroid).getDistance() }
+        .average()
+        .toFloat()
+    val previousSpan = pressedChanges
+        .map { (it.previousPosition - previousCentroid).getDistance() }
+        .average()
+        .toFloat()
+
+    return if (currentSpan > 0f && previousSpan > 0f) {
+        currentSpan / previousSpan
+    } else {
+        1f
+    }
+}
+
+private fun averageOffset(offsets: List<Offset>): Offset {
+    if (offsets.isEmpty()) return Offset.Unspecified
+    val sumX = offsets.sumOf { it.x.toDouble() }.toFloat()
+    val sumY = offsets.sumOf { it.y.toDouble() }.toFloat()
+    return Offset(sumX / offsets.size, sumY / offsets.size)
 }
 
 private fun blockBounds(

@@ -323,6 +323,7 @@ fun EditorScreen(
                         viewModel.startBlockDrag(blockId)
                     },
                     onBlockDrag = viewModel::moveBlock,
+                    onBlockScale = viewModel::scaleBlock,
                     onAddText = viewModel::addTextBlock,
                     onAddImage = { imagePicker.launch(arrayOf("image/*")) },
                     onOpenDrawingLibrary = viewModel::openDrawingLibrary,
@@ -362,6 +363,7 @@ private fun EditorCanvasContent(
     onCanvasTap: () -> Unit,
     onBlockDragStart: (String) -> Unit,
     onBlockDrag: (String, Float, Float) -> Unit,
+    onBlockScale: (String, Float) -> Unit,
     onAddText: () -> Unit,
     onAddImage: () -> Unit,
     onOpenDrawingLibrary: () -> Unit,
@@ -417,7 +419,8 @@ private fun EditorCanvasContent(
             onBlockTap = onOpenBlockEditor,
             onCanvasTap = onCanvasTap,
             onBlockDragStart = onBlockDragStart,
-            onBlockDrag = onBlockDrag
+            onBlockDrag = onBlockDrag,
+            onBlockScale = onBlockScale
         )
     }
 }
