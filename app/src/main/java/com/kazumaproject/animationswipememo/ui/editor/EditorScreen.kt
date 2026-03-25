@@ -194,6 +194,11 @@ fun EditorScreen(
                         "EditorScreen",
                         "rootUp position=${up?.position} consumed=${up?.isConsumed} selected=${uiState.selectedBlockId} sheet=${uiState.isEditorSheetVisible}"
                     )
+                    if (up != null && !up.isConsumed) {
+                        dismissTransientInput()
+                        viewModel.clearSelection()
+                        viewModel.hideEditorSheet()
+                    }
                 }
             }
     ) {
