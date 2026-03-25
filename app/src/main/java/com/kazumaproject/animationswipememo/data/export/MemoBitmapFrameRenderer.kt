@@ -96,8 +96,8 @@ class MemoBitmapFrameRenderer(
         memo.blocks.forEach { block ->
             when (block.type) {
                 MemoBlockType.Text -> drawTextBlock(canvas, cardRect, block, progress, darkTheme)
-                MemoBlockType.Image -> drawImageBlock(canvas, cardRect, block)
-                MemoBlockType.Drawing -> drawDrawingBlock(canvas, cardRect, block)
+                MemoBlockType.Image -> drawImageBlock(canvas, cardRect, block, progress)
+                MemoBlockType.Drawing -> drawDrawingBlock(canvas, cardRect, block, progress)
             }
         }
 
@@ -161,32 +161,60 @@ class MemoBitmapFrameRenderer(
     private fun drawImageBlock(
         canvas: Canvas,
         cardRect: RectF,
-        block: MemoBlock
+        block: MemoBlock,
+        progress: Float
     ) {
         val imageUri = block.imageUri ?: return
         val bitmap = loadBitmap(imageUri) ?: return
+        val frame = MemoAnimationEngine.frameAt(block.animationStyle, "", progress)
         val width = cardRect.width() * block.widthFraction
         val height = cardRect.height() * block.heightFraction
         val cx = cardRect.left + block.normalizedX * cardRect.width()
         val cy = cardRect.top + block.normalizedY * cardRect.height()
-        val dst = RectF(
-            cx - width / 2f,
-            cy - height / 2f,
-            cx + width / 2f,
-            cy + height / 2f
-        )
-        canvas.drawBitmap(bitmap, null, dst, null)
+        val dst = RectF(-width / 2f, -height / 2f, width / 2f, height / 2f)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            alpha = (frame.alpha.coerceIn(0f, 1f) * 255f).toInt()
+            isFilterBitmap = true
+        }
+
+        canvas.save()
+        canvas.translate(cx + frame.offsetXPx, cy + frame.offsetYPx)
+        canvas.scale(frame.scale, frame.scale)
+        canvas.rotate(frame.rotationDeg)
+        if (frame.glowRadiusPx > 0f) {
+            val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = 0x44FFFFFF
+                setShadowLayer(frame.glowRadiusPx * 1.3f, 0f, 0f, 0x88FFFFFF.toInt())
+            }
+            canvas.drawRoundRect(
+                RectF(dst.left - 8f, dst.top - 8f, dst.right + 8f, dst.bottom + 8f),
+                24f,
+                24f,
+                glowPaint
+            )
+        }
+        canvas.drawBitmap(bitmap, null, dst, paint)
+        canvas.restore()
     }
 
     private fun drawDrawingBlock(
         canvas: Canvas,
         cardRect: RectF,
-        block: MemoBlock
+        block: MemoBlock,
+        progress: Float
     ) {
-        val left = cardRect.left + (block.normalizedX - block.widthFraction / 2f) * cardRect.width()
-        val top = cardRect.top + (block.normalizedY - block.heightFraction / 2f) * cardRect.height()
+        val frame = MemoAnimationEngine.frameAt(block.animationStyle, "", progress)
         val width = cardRect.width() * block.widthFraction
         val height = cardRect.height() * block.heightFraction
+        val cx = cardRect.left + block.normalizedX * cardRect.width()
+        val cy = cardRect.top + block.normalizedY * cardRect.height()
+        val left = -width / 2f
+        val top = -height / 2f
+
+        canvas.save()
+        canvas.translate(cx + frame.offsetXPx, cy + frame.offsetYPx)
+        canvas.scale(frame.scale, frame.scale)
+        canvas.rotate(frame.rotationDeg)
 
         block.strokes.forEach { stroke ->
             if (stroke.points.size < 2) return@forEach
@@ -196,8 +224,23 @@ class MemoBitmapFrameRenderer(
                 val y = top + point.y * height
                 if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
+
+            if (frame.glowRadiusPx > 0f) {
+                val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = stroke.color
+                    alpha = 110
+                    style = Paint.Style.STROKE
+                    strokeWidth = stroke.width + frame.glowRadiusPx
+                    strokeCap = Paint.Cap.ROUND
+                    strokeJoin = Paint.Join.ROUND
+                    setShadowLayer(frame.glowRadiusPx, 0f, 0f, stroke.color)
+                }
+                canvas.drawPath(path, glowPaint)
+            }
+
             val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = stroke.color
+                alpha = (frame.alpha.coerceIn(0f, 1f) * 255f).toInt()
                 style = Paint.Style.STROKE
                 strokeWidth = stroke.width
                 strokeCap = Paint.Cap.ROUND
@@ -205,6 +248,8 @@ class MemoBitmapFrameRenderer(
             }
             canvas.drawPath(path, paint)
         }
+
+        canvas.restore()
     }
 
     private fun loadBitmap(imageUri: String): Bitmap? {

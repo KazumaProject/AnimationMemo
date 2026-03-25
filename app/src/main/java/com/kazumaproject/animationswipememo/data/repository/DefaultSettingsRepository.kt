@@ -25,5 +25,9 @@ class DefaultSettingsRepository(
         storage.updateThemeMode(themeMode)
     }
 
+    override suspend fun updateEditorSheetOpacity(opacity: Float) {
+        storage.updateEditorSheetOpacity(opacity)
+    }
+
     override fun currentValue(): AppSettings = AppSettings()
 }

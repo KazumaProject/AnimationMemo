@@ -7,14 +7,17 @@ import com.kazumaproject.animationswipememo.data.local.MemoDatabase
 import com.kazumaproject.animationswipememo.data.preferences.SettingsPreferencesStorage
 import com.kazumaproject.animationswipememo.data.repository.DefaultSettingsRepository
 import com.kazumaproject.animationswipememo.data.repository.OfflineMemoRepository
+import com.kazumaproject.animationswipememo.data.repository.OfflineSavedDrawingRepository
 import com.kazumaproject.animationswipememo.domain.export.AnimationExporter
 import com.kazumaproject.animationswipememo.domain.repository.MemoRepository
+import com.kazumaproject.animationswipememo.domain.repository.SavedDrawingRepository
 import com.kazumaproject.animationswipememo.domain.repository.SettingsRepository
 
 interface AppContainer {
     val memoRepository: MemoRepository
     val settingsRepository: SettingsRepository
     val animationExporter: AnimationExporter
+    val savedDrawingRepository: SavedDrawingRepository
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -36,6 +39,10 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
 
     override val settingsRepository: SettingsRepository by lazy {
         DefaultSettingsRepository(settingsStorage)
+    }
+
+    override val savedDrawingRepository: SavedDrawingRepository by lazy {
+        OfflineSavedDrawingRepository(database.savedDrawingDao())
     }
 
     override val animationExporter: AnimationExporter by lazy {

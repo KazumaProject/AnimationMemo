@@ -6,12 +6,13 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [MemoEntity::class],
-    version = 2,
+    entities = [MemoEntity::class, SavedDrawingEntity::class],
+    version = 3,
     exportSchema = true
 )
 abstract class MemoDatabase : RoomDatabase() {
     abstract fun memoDao(): MemoDao
+    abstract fun savedDrawingDao(): SavedDrawingDao
 
     companion object {
         fun create(context: Context): MemoDatabase {

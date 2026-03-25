@@ -43,6 +43,12 @@ class SettingsViewModel(
         }
     }
 
+    fun updateEditorSheetOpacity(opacity: Float) {
+        viewModelScope.launch {
+            settingsRepository.updateEditorSheetOpacity(opacity)
+        }
+    }
+
     companion object {
         fun factory(container: AppContainer): ViewModelProvider.Factory = viewModelFactory {
             initializer {

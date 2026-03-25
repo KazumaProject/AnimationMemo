@@ -3,6 +3,7 @@ package com.kazumaproject.animationswipememo.data.preferences
 import android.content.Context
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.kazumaproject.animationswipememo.domain.model.AnimationStyle
@@ -37,6 +38,12 @@ class SettingsPreferencesStorage(private val context: Context) {
         }
     }
 
+    suspend fun updateEditorSheetOpacity(opacity: Float) {
+        context.dataStore.edit { preferences ->
+            preferences[Keys.EDITOR_SHEET_OPACITY] = opacity
+        }
+    }
+
     private fun Preferences.toAppSettings(): AppSettings {
         return AppSettings(
             defaultAnimation = enumValueOfOrDefault(
@@ -50,7 +57,8 @@ class SettingsPreferencesStorage(private val context: Context) {
             themeMode = enumValueOfOrDefault(
                 this[Keys.THEME_MODE],
                 ThemeMode.System
-            )
+            ),
+            editorSheetOpacity = this[Keys.EDITOR_SHEET_OPACITY] ?: 0.88f
         )
     }
 
@@ -67,5 +75,6 @@ class SettingsPreferencesStorage(private val context: Context) {
         val DEFAULT_ANIMATION = stringPreferencesKey("default_animation")
         val GIF_QUALITY = stringPreferencesKey("gif_quality")
         val THEME_MODE = stringPreferencesKey("theme_mode")
+        val EDITOR_SHEET_OPACITY = floatPreferencesKey("editor_sheet_opacity")
     }
 }

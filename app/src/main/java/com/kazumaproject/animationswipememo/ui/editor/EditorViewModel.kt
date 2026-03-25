@@ -13,9 +13,11 @@ import com.kazumaproject.animationswipememo.domain.export.ExportRequest
 import com.kazumaproject.animationswipememo.domain.model.AnimationStyle
 import com.kazumaproject.animationswipememo.domain.model.MemoBlock
 import com.kazumaproject.animationswipememo.domain.model.MemoDraft
+import com.kazumaproject.animationswipememo.domain.model.SavedDrawing
 import com.kazumaproject.animationswipememo.domain.model.StrokeData
 import com.kazumaproject.animationswipememo.domain.model.TextStyleSetting
 import com.kazumaproject.animationswipememo.domain.repository.MemoRepository
+import com.kazumaproject.animationswipememo.domain.repository.SavedDrawingRepository
 import com.kazumaproject.animationswipememo.domain.repository.SettingsRepository
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,7 +33,8 @@ class EditorViewModel(
     savedStateHandle: SavedStateHandle,
     private val memoRepository: MemoRepository,
     private val settingsRepository: SettingsRepository,
-    private val animationExporter: AnimationExporter
+    private val animationExporter: AnimationExporter,
+    private val savedDrawingRepository: SavedDrawingRepository
 ) : ViewModel() {
     private val memoId: String? = savedStateHandle["memoId"]
     private val draftState = MutableStateFlow<MemoDraft?>(null)
@@ -41,7 +44,8 @@ class EditorViewModel(
     private val selectedBlockIdState = MutableStateFlow<String?>(null)
     private val editorSheetVisibleState = MutableStateFlow(false)
     private val toolPaletteVisibleState = MutableStateFlow(true)
-    private val drawingModeState = MutableStateFlow(false)
+    private val drawingLibraryVisibleState = MutableStateFlow(false)
+    private val drawingEditorVisibleState = MutableStateFlow(false)
     private val effects = MutableSharedFlow<EditorEffect>()
 
     val uiState: StateFlow<EditorUiState> = combine(
@@ -49,26 +53,31 @@ class EditorViewModel(
             combine(
                 draftState,
                 settingsRepository.settings,
+                savedDrawingRepository.observeSavedDrawings(),
                 selectedBlockIdState,
                 editorSheetVisibleState
-            ) { draft, settings, selectedBlockId, isEditorSheetVisible ->
+            ) { draft, settings, savedDrawings, selectedBlockId, isEditorSheetVisible ->
                 PartialEditorUiStateA(
                     draft = draft,
                     settings = settings,
+                    savedDrawings = savedDrawings,
                     selectedBlockId = selectedBlockId,
                     isEditorSheetVisible = isEditorSheetVisible
                 )
             },
             toolPaletteVisibleState,
-            drawingModeState
-        ) { partialA, isToolPaletteVisible, isDrawingMode ->
+            drawingLibraryVisibleState,
+            drawingEditorVisibleState
+        ) { partialA, isToolPaletteVisible, isDrawingLibraryVisible, isDrawingEditorVisible ->
             PartialEditorUiStateB(
                 draft = partialA.draft,
                 settings = partialA.settings,
+                savedDrawings = partialA.savedDrawings,
                 selectedBlockId = partialA.selectedBlockId,
                 isEditorSheetVisible = partialA.isEditorSheetVisible,
                 isToolPaletteVisible = isToolPaletteVisible,
-                isDrawingMode = isDrawingMode
+                isDrawingLibraryVisible = isDrawingLibraryVisible,
+                isDrawingEditorVisible = isDrawingEditorVisible
             )
         },
         loadingState,
@@ -78,10 +87,12 @@ class EditorViewModel(
         EditorUiState(
             draft = partial.draft,
             settings = partial.settings,
+            savedDrawings = partial.savedDrawings,
             selectedBlockId = partial.selectedBlockId,
             isEditorSheetVisible = partial.isEditorSheetVisible,
             isToolPaletteVisible = partial.isToolPaletteVisible,
-            isDrawingMode = partial.isDrawingMode,
+            isDrawingLibraryVisible = partial.isDrawingLibraryVisible,
+            isDrawingEditorVisible = partial.isDrawingEditorVisible,
             isLoading = isLoading,
             isWorking = isWorking,
             isExistingMemo = isExisting
@@ -129,30 +140,9 @@ class EditorViewModel(
             updatedAt = System.currentTimeMillis()
         )
         selectedBlockIdState.value = newBlock.id
-        editorSheetVisibleState.value = false
-        drawingModeState.value = false
-    }
-
-    fun addDrawingBlock(
-        centerX: Float,
-        centerY: Float,
-        widthFraction: Float,
-        heightFraction: Float,
-        stroke: StrokeData
-    ) {
-        val draft = draftState.value ?: return
-        val newBlock = MemoBlock.createDrawing(
-            x = centerX,
-            y = centerY,
-            widthFraction = widthFraction,
-            heightFraction = heightFraction,
-            strokes = listOf(stroke)
-        )
-        draftState.value = draft.copy(
-            blocks = draft.blocks + newBlock,
-            updatedAt = System.currentTimeMillis()
-        )
-        selectedBlockIdState.value = newBlock.id
+        editorSheetVisibleState.value = true
+        drawingLibraryVisibleState.value = false
+        drawingEditorVisibleState.value = false
     }
 
     fun selectBlock(blockId: String) {
@@ -177,13 +167,75 @@ class EditorViewModel(
         toolPaletteVisibleState.value = !toolPaletteVisibleState.value
     }
 
-    fun toggleDrawingMode() {
-        drawingModeState.value = !drawingModeState.value
+    fun openDrawingLibrary() {
+        drawingLibraryVisibleState.value = true
+        drawingEditorVisibleState.value = false
         editorSheetVisibleState.value = false
     }
 
-    fun finishDrawingMode() {
-        drawingModeState.value = false
+    fun closeDrawingLibrary() {
+        drawingLibraryVisibleState.value = false
+    }
+
+    fun openDrawingEditor() {
+        drawingLibraryVisibleState.value = false
+        drawingEditorVisibleState.value = true
+        editorSheetVisibleState.value = false
+    }
+
+    fun closeDrawingEditor() {
+        drawingEditorVisibleState.value = false
+    }
+
+    fun insertSavedDrawing(drawing: SavedDrawing) {
+        executeAction {
+            insertDrawingBlock(
+                strokes = drawing.strokes,
+                widthFraction = drawing.widthFraction,
+                heightFraction = drawing.heightFraction,
+                saveMessage = "\"${drawing.name}\" inserted."
+            )
+        }
+    }
+
+    fun saveNewDrawingFromEditor(
+        strokes: List<StrokeData>,
+        widthFraction: Float,
+        heightFraction: Float,
+        saveToLibrary: Boolean,
+        name: String
+    ) {
+        if (strokes.none { it.points.size > 1 }) {
+            emitMessage("Draw something before saving.")
+            return
+        }
+
+        executeAction {
+            if (saveToLibrary) {
+                val timestamp = System.currentTimeMillis()
+                savedDrawingRepository.saveDrawing(
+                    SavedDrawing(
+                        id = java.util.UUID.randomUUID().toString(),
+                        name = name.ifBlank { "Drawing ${uiState.value.savedDrawings.size + 1}" },
+                        strokes = strokes,
+                        widthFraction = widthFraction,
+                        heightFraction = heightFraction,
+                        createdAt = timestamp,
+                        updatedAt = timestamp
+                    )
+                )
+            }
+            insertDrawingBlock(
+                strokes = strokes,
+                widthFraction = widthFraction,
+                heightFraction = heightFraction,
+                saveMessage = if (saveToLibrary) {
+                    "Drawing saved to memo and library."
+                } else {
+                    "Drawing inserted."
+                }
+            )
+        }
     }
 
     fun showEditorSheet() {
@@ -223,6 +275,24 @@ class EditorViewModel(
         }
     }
 
+    fun moveBlock(blockId: String, deltaXNormalized: Float, deltaYNormalized: Float) {
+        val draft = draftState.value ?: return
+        draftState.value = draft.copy(
+            blocks = draft.blocks.map { block ->
+                if (block.id != blockId) {
+                    block
+                } else {
+                    block.copy(
+                        normalizedX = (block.normalizedX + deltaXNormalized).coerceIn(0.1f, 0.9f),
+                        normalizedY = (block.normalizedY + deltaYNormalized).coerceIn(0.14f, 0.9f)
+                    )
+                }
+            },
+            updatedAt = System.currentTimeMillis()
+        )
+        selectedBlockIdState.value = blockId
+    }
+
     fun moveSelectedBlock(deltaXNormalized: Float, deltaYNormalized: Float) {
         updateSelectedBlock { block ->
             block.copy(
@@ -250,7 +320,7 @@ class EditorViewModel(
     fun saveMemo() {
         val draft = draftState.value ?: return
         if (!draft.hasContent) {
-            emitMessage("Add at least one text block before saving.")
+            emitMessage("Add text, image, or handwriting before saving.")
             return
         }
         executeAction {
@@ -272,6 +342,8 @@ class EditorViewModel(
             existingMemoState.value = false
             selectedBlockIdState.value = freshDraft.blocks.firstOrNull()?.id
             editorSheetVisibleState.value = true
+            drawingLibraryVisibleState.value = false
+            drawingEditorVisibleState.value = false
             effects.emit(EditorEffect.PerformHaptic)
             effects.emit(EditorEffect.ShowMessage("Memo discarded."))
         }
@@ -280,7 +352,7 @@ class EditorViewModel(
     fun exportGif(darkTheme: Boolean) {
         val draft = draftState.value ?: return
         if (!draft.hasContent) {
-            emitMessage("Add at least one text block before exporting.")
+            emitMessage("Add text, image, or handwriting before exporting.")
             return
         }
         executeAction {
@@ -299,7 +371,7 @@ class EditorViewModel(
     fun exportPng(darkTheme: Boolean) {
         val draft = draftState.value ?: return
         if (!draft.hasContent) {
-            emitMessage("Add at least one text block before exporting.")
+            emitMessage("Add text, image, or handwriting before exporting.")
             return
         }
         executeAction {
@@ -343,6 +415,33 @@ class EditorViewModel(
         }
     }
 
+    private suspend fun insertDrawingBlock(
+        strokes: List<StrokeData>,
+        widthFraction: Float,
+        heightFraction: Float,
+        saveMessage: String
+    ) {
+        val draft = draftState.value ?: return
+        val newBlock = MemoBlock.createDrawing(
+            x = 0.5f,
+            y = 0.48f,
+            widthFraction = widthFraction,
+            heightFraction = heightFraction,
+            strokes = strokes,
+            animationStyle = uiState.value.settings.defaultAnimation
+        )
+        draftState.value = draft.copy(
+            blocks = draft.blocks + newBlock,
+            updatedAt = System.currentTimeMillis()
+        )
+        selectedBlockIdState.value = newBlock.id
+        editorSheetVisibleState.value = true
+        drawingLibraryVisibleState.value = false
+        drawingEditorVisibleState.value = false
+        effects.emit(EditorEffect.PerformHaptic)
+        effects.emit(EditorEffect.ShowMessage(saveMessage))
+    }
+
     companion object {
         fun factory(container: AppContainer): ViewModelProvider.Factory = viewModelFactory {
             initializer {
@@ -350,7 +449,8 @@ class EditorViewModel(
                     savedStateHandle = createSavedStateHandle(),
                     memoRepository = container.memoRepository,
                     settingsRepository = container.settingsRepository,
-                    animationExporter = container.animationExporter
+                    animationExporter = container.animationExporter,
+                    savedDrawingRepository = container.savedDrawingRepository
                 )
             }
         }
@@ -360,6 +460,7 @@ class EditorViewModel(
 private data class PartialEditorUiStateA(
     val draft: MemoDraft?,
     val settings: com.kazumaproject.animationswipememo.domain.model.AppSettings,
+    val savedDrawings: List<SavedDrawing>,
     val selectedBlockId: String?,
     val isEditorSheetVisible: Boolean
 )
@@ -367,8 +468,10 @@ private data class PartialEditorUiStateA(
 private data class PartialEditorUiStateB(
     val draft: MemoDraft?,
     val settings: com.kazumaproject.animationswipememo.domain.model.AppSettings,
+    val savedDrawings: List<SavedDrawing>,
     val selectedBlockId: String?,
     val isEditorSheetVisible: Boolean,
     val isToolPaletteVisible: Boolean,
-    val isDrawingMode: Boolean
+    val isDrawingLibraryVisible: Boolean,
+    val isDrawingEditorVisible: Boolean
 )

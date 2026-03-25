@@ -14,11 +14,13 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -114,6 +116,27 @@ fun SettingsScreen(
                         ?.let(viewModel::updateGifQuality)
                 }
             )
+
+            Text(
+                text = "Editor sheet",
+                style = MaterialTheme.typography.titleLarge
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "Opacity: ${(uiState.editorSheetOpacity * 100).toInt()}%",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    text = "Lower values make the text editor sheet more see-through so the memo stays visible while typing.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Slider(
+                    value = uiState.editorSheetOpacity,
+                    onValueChange = viewModel::updateEditorSheetOpacity,
+                    valueRange = 0.45f..1f
+                )
+            }
         }
     }
 }
@@ -140,7 +163,10 @@ private fun SelectionDropdownRow(
                 value = selectedLabel,
                 onValueChange = {},
                 modifier = Modifier
-                    .menuAnchor()
+                    .menuAnchor(
+                        type = MenuAnchorType.PrimaryNotEditable,
+                        enabled = true
+                    )
                     .fillMaxWidth(),
                 readOnly = true,
                 trailingIcon = {

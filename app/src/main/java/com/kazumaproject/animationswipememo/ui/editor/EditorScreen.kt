@@ -23,7 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.outlined.AddBox
-import androidx.compose.material.icons.outlined.Brush
+import androidx.compose.material.icons.outlined.AutoFixHigh
 import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.Draw
 import androidx.compose.material.icons.outlined.FileDownload
@@ -52,6 +52,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -63,7 +64,9 @@ import com.kazumaproject.animationswipememo.domain.model.MemoBlockType
 import com.kazumaproject.animationswipememo.domain.model.TextStyleSetting
 import com.kazumaproject.animationswipememo.domain.model.ThemeMode
 import com.kazumaproject.animationswipememo.ui.components.AnimationStyleChips
+import com.kazumaproject.animationswipememo.ui.components.DrawingEditorOverlay
 import com.kazumaproject.animationswipememo.ui.components.PaperMemoCanvas
+import com.kazumaproject.animationswipememo.ui.components.SavedDrawingLibrarySheet
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -105,10 +108,16 @@ fun EditorScreen(
         }
     }
 
+    val sheetOpacity = uiState.settings.editorSheetOpacity.coerceIn(0.45f, 1f)
+    val sheetColor = MaterialTheme.colorScheme.surface.copy(alpha = sheetOpacity)
+    val scrimAlpha = ((1f - sheetOpacity) * 0.22f) + 0.04f
+
     if (uiState.isEditorSheetVisible && uiState.selectedBlock != null) {
         ModalBottomSheet(
             onDismissRequest = viewModel::hideEditorSheet,
-            modifier = Modifier.imePadding()
+            modifier = Modifier.imePadding(),
+            containerColor = sheetColor,
+            scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = scrimAlpha)
         ) {
             BlockEditorSheet(
                 uiState = uiState,
@@ -121,88 +130,109 @@ fun EditorScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(if (uiState.isExistingMemo) "Memo canvas" else "New memo")
-                        Text(
-                            text = if (uiState.isDrawingMode) {
-                                "Handwriting mode is active."
-                            } else {
-                                "Text, image, and handwriting blocks on one memo."
-                            },
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onOpenList) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Outlined.List,
-                            contentDescription = "Open memo list"
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = viewModel::toggleToolPaletteVisibility) {
-                        Icon(
-                            imageVector = if (uiState.isToolPaletteVisible) {
-                                Icons.Outlined.VisibilityOff
-                            } else {
-                                Icons.Outlined.Visibility
-                            },
-                            contentDescription = "Toggle tool palette"
-                        )
-                    }
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Outlined.Settings, contentDescription = "Open settings")
-                    }
-                }
+    if (uiState.isDrawingLibraryVisible) {
+        ModalBottomSheet(
+            onDismissRequest = viewModel::closeDrawingLibrary,
+            containerColor = sheetColor,
+            scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = scrimAlpha)
+        ) {
+            SavedDrawingLibrarySheet(
+                savedDrawings = uiState.savedDrawings,
+                onNewDrawing = viewModel::openDrawingEditor,
+                onInsertDrawing = viewModel::insertSavedDrawing
             )
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
-    ) { innerPadding ->
-        if (uiState.isLoading || uiState.draft == null) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                verticalArrangement = Arrangement.Center
-            ) {
-                CircularProgressIndicator(modifier = Modifier.padding(horizontal = 24.dp))
+        }
+    }
+
+    androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text(if (uiState.isExistingMemo) "Memo canvas" else "New memo")
+                            Text(
+                                text = "Compose text, images, and reusable handwriting on one note.",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onOpenList) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.List,
+                                contentDescription = "Open memo list"
+                            )
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = viewModel::toggleToolPaletteVisibility) {
+                            Icon(
+                                imageVector = if (uiState.isToolPaletteVisible) {
+                                    Icons.Outlined.VisibilityOff
+                                } else {
+                                    Icons.Outlined.Visibility
+                                },
+                                contentDescription = "Toggle tool palette"
+                            )
+                        }
+                        IconButton(onClick = onOpenSettings) {
+                            Icon(Icons.Outlined.Settings, contentDescription = "Open settings")
+                        }
+                    }
+                )
+            },
+            snackbarHost = { SnackbarHost(snackbarHostState) }
+        ) { innerPadding ->
+            if (uiState.isLoading || uiState.draft == null) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding),
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.padding(horizontal = 24.dp))
+                }
+            } else {
+                EditorCanvasContent(
+                    uiState = uiState,
+                    darkTheme = isDarkTheme,
+                    modifier = Modifier.padding(innerPadding),
+                    onOpenBlockEditor = viewModel::openBlockEditor,
+                    onCanvasTap = {
+                        viewModel.clearSelection()
+                        viewModel.hideEditorSheet()
+                    },
+                    onBlockDragStart = viewModel::startBlockDrag,
+                    onBlockDrag = viewModel::moveBlock,
+                    onAddText = viewModel::addTextBlock,
+                    onAddImage = { imagePicker.launch(arrayOf("image/*")) },
+                    onOpenDrawingLibrary = viewModel::openDrawingLibrary,
+                    onEditSelected = viewModel::showEditorSheet,
+                    onSave = viewModel::saveMemo,
+                    onExportGif = { viewModel.exportGif(isDarkTheme) },
+                    onExportPng = { viewModel.exportPng(isDarkTheme) },
+                    onDiscard = viewModel::discardMemo,
+                    onOpenList = onOpenList,
+                    onOpenSettings = onOpenSettings
+                )
             }
-        } else {
-            EditorCanvasContent(
-                uiState = uiState,
+        }
+
+        if (uiState.isDrawingEditorVisible) {
+            DrawingEditorOverlay(
                 darkTheme = isDarkTheme,
-                modifier = Modifier.padding(innerPadding),
-                onOpenBlockEditor = viewModel::openBlockEditor,
-                onCanvasTap = {
-                    viewModel.clearSelection()
-                    viewModel.hideEditorSheet()
-                },
-                onBlockDragStart = viewModel::startBlockDrag,
-                onBlockDrag = { blockId, dx, dy ->
-                    viewModel.selectBlock(blockId)
-                    viewModel.moveSelectedBlock(dx, dy)
-                },
-                onDrawingComplete = { centerX, centerY, widthFraction, heightFraction, stroke ->
-                    viewModel.addDrawingBlock(centerX, centerY, widthFraction, heightFraction, stroke)
-                    viewModel.finishDrawingMode()
-                },
-                onAddText = viewModel::addTextBlock,
-                onAddImage = { imagePicker.launch(arrayOf("image/*")) },
-                onToggleDraw = viewModel::toggleDrawingMode,
-                onEditSelected = viewModel::showEditorSheet,
-                onSave = viewModel::saveMemo,
-                onExportGif = { viewModel.exportGif(isDarkTheme) },
-                onExportPng = { viewModel.exportPng(isDarkTheme) },
-                onDiscard = viewModel::discardMemo,
-                onOpenList = onOpenList,
-                onOpenSettings = onOpenSettings
+                onClose = viewModel::closeDrawingEditor,
+                onSave = { strokes, widthFraction, heightFraction, saveToLibrary, name ->
+                    viewModel.saveNewDrawingFromEditor(
+                        strokes = strokes,
+                        widthFraction = widthFraction,
+                        heightFraction = heightFraction,
+                        saveToLibrary = saveToLibrary,
+                        name = name
+                    )
+                }
             )
         }
     }
@@ -218,10 +248,9 @@ private fun EditorCanvasContent(
     onCanvasTap: () -> Unit,
     onBlockDragStart: (String) -> Unit,
     onBlockDrag: (String, Float, Float) -> Unit,
-    onDrawingComplete: (Float, Float, Float, Float, com.kazumaproject.animationswipememo.domain.model.StrokeData) -> Unit,
     onAddText: () -> Unit,
     onAddImage: () -> Unit,
-    onToggleDraw: () -> Unit,
+    onOpenDrawingLibrary: () -> Unit,
     onEditSelected: () -> Unit,
     onSave: () -> Unit,
     onExportGif: () -> Unit,
@@ -260,11 +289,7 @@ private fun EditorCanvasContent(
             ) {
                 ToolButton("Add Text", Icons.Outlined.AddBox, onAddText)
                 ToolButton("Image", Icons.Outlined.Image, onAddImage)
-                ToolButton(
-                    label = if (uiState.isDrawingMode) "Cancel Draw" else "Draw",
-                    icon = Icons.Outlined.Brush,
-                    onClick = onToggleDraw
-                )
+                ToolButton("Handwriting", Icons.Outlined.AutoFixHigh, onOpenDrawingLibrary)
                 ToolButton("Edit", Icons.Outlined.Draw, onEditSelected)
                 ToolButton("Save", Icons.Outlined.Save, onSave)
                 ToolButton("GIF", Icons.Outlined.FileDownload, onExportGif)
@@ -280,13 +305,11 @@ private fun EditorCanvasContent(
             selectedBlockId = uiState.selectedBlockId,
             progress = progress,
             darkTheme = darkTheme,
-            isDrawingMode = uiState.isDrawingMode,
             modifier = Modifier.fillMaxSize(),
             onBlockTap = onOpenBlockEditor,
             onCanvasTap = onCanvasTap,
             onBlockDragStart = onBlockDragStart,
-            onBlockDrag = onBlockDrag,
-            onDrawingComplete = onDrawingComplete
+            onBlockDrag = onBlockDrag
         )
     }
 }
@@ -313,6 +336,7 @@ private fun BlockEditorSheet(
     onClose: () -> Unit
 ) {
     val block = uiState.selectedBlock ?: return
+    val animationChoices = AnimationStyle.availableFor(block.type)
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -322,8 +346,8 @@ private fun BlockEditorSheet(
         Text(
             text = when (block.type) {
                 MemoBlockType.Text -> "Text block editor"
-                MemoBlockType.Image -> "Image block"
-                MemoBlockType.Drawing -> "Drawing block"
+                MemoBlockType.Image -> "Image block editor"
+                MemoBlockType.Drawing -> "Handwriting block editor"
             },
             style = MaterialTheme.typography.titleLarge
         )
@@ -339,32 +363,11 @@ private fun BlockEditorSheet(
                     minLines = 3,
                     maxLines = 6
                 )
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "Animation",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    AnimationStyleChips(
-                        selected = block.animationStyle,
-                        onSelect = onAnimationChange
-                    )
-                }
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "Font size: ${block.textStyle.fontSize.toInt()}",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Slider(
-                        value = block.textStyle.fontSize,
-                        onValueChange = onFontSizeChange,
-                        valueRange = TextStyleSetting.MIN_FONT_SIZE..TextStyleSetting.MAX_FONT_SIZE
-                    )
-                }
             }
 
             MemoBlockType.Image -> {
                 Text(
-                    text = "This image can be moved on the memo. Replacement and resize can come next.",
+                    text = "This image block can move freely on the memo and now supports the same motion effects as text.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -372,9 +375,35 @@ private fun BlockEditorSheet(
 
             MemoBlockType.Drawing -> {
                 Text(
-                    text = "This handwriting block can be moved on the memo. Stroke editing can come next.",
+                    text = "This handwriting block can be repositioned and animated after you place it on the memo.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = "Animation",
+                style = MaterialTheme.typography.titleMedium
+            )
+            AnimationStyleChips(
+                selected = block.animationStyle,
+                styles = animationChoices,
+                onSelect = onAnimationChange
+            )
+        }
+
+        if (block.type == MemoBlockType.Text) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "Font size: ${block.textStyle.fontSize.toInt()}",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Slider(
+                    value = block.textStyle.fontSize,
+                    onValueChange = onFontSizeChange,
+                    valueRange = TextStyleSetting.MIN_FONT_SIZE..TextStyleSetting.MAX_FONT_SIZE
                 )
             }
         }

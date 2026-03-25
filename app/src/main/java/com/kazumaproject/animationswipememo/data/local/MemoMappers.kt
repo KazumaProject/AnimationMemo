@@ -6,6 +6,7 @@ import com.kazumaproject.animationswipememo.domain.model.MemoBlockType
 import com.kazumaproject.animationswipememo.domain.model.MemoDraft
 import com.kazumaproject.animationswipememo.domain.model.MemoTextAlign
 import com.kazumaproject.animationswipememo.domain.model.PaperStyle
+import com.kazumaproject.animationswipememo.domain.model.SavedDrawing
 import com.kazumaproject.animationswipememo.domain.model.StrokeData
 import com.kazumaproject.animationswipememo.domain.model.StrokePoint
 import com.kazumaproject.animationswipememo.domain.model.TextStyleSetting
@@ -32,28 +33,34 @@ fun MemoDraft.toEntity(): MemoEntity {
     )
 }
 
+fun SavedDrawingEntity.toDomain(): SavedDrawing {
+    return SavedDrawing(
+        id = id,
+        name = name,
+        strokes = decodeStrokes(strokesJson),
+        widthFraction = widthFraction,
+        heightFraction = heightFraction,
+        createdAt = createdAt,
+        updatedAt = updatedAt
+    )
+}
+
+fun SavedDrawing.toEntity(): SavedDrawingEntity {
+    return SavedDrawingEntity(
+        id = id,
+        name = name,
+        strokesJson = encodeStrokes(strokes),
+        widthFraction = widthFraction,
+        heightFraction = heightFraction,
+        createdAt = createdAt,
+        updatedAt = updatedAt
+    )
+}
+
 private fun encodeBlocks(blocks: List<MemoBlock>): String {
     val array = JSONArray()
     blocks.forEach { block ->
-        val strokesJson = JSONArray()
-        block.strokes.forEach { stroke ->
-            val pointsJson = JSONArray()
-            stroke.points.forEach { point ->
-                pointsJson.put(
-                    JSONObject().apply {
-                        put("x", point.x.toDouble())
-                        put("y", point.y.toDouble())
-                    }
-                )
-            }
-            strokesJson.put(
-                JSONObject().apply {
-                    put("color", stroke.color)
-                    put("width", stroke.width.toDouble())
-                    put("points", pointsJson)
-                }
-            )
-        }
+        val strokesJson = JSONArray(encodeStrokes(block.strokes))
         array.put(
             JSONObject().apply {
                 put("id", block.id)
@@ -84,31 +91,9 @@ private fun decodeBlocks(json: String): List<MemoBlock> {
                 val type = MemoBlockType.valueOf(
                     item.optString("type", MemoBlockType.Text.name)
                 )
-                val strokes = buildList {
-                    val strokesJson = item.optJSONArray("strokes") ?: JSONArray()
-                    repeat(strokesJson.length()) { strokeIndex ->
-                        val strokeJson = strokesJson.getJSONObject(strokeIndex)
-                        val pointsJson = strokeJson.optJSONArray("points") ?: JSONArray()
-                        val points = buildList {
-                            repeat(pointsJson.length()) { pointIndex ->
-                                val pointJson = pointsJson.getJSONObject(pointIndex)
-                                add(
-                                    StrokePoint(
-                                        x = pointJson.optDouble("x", 0.0).toFloat(),
-                                        y = pointJson.optDouble("y", 0.0).toFloat()
-                                    )
-                                )
-                            }
-                        }
-                        add(
-                            StrokeData(
-                                points = points,
-                                color = strokeJson.optInt("color", TextStyleSetting.DEFAULT_LIGHT_TEXT_COLOR),
-                                width = strokeJson.optDouble("width", 4.0).toFloat()
-                            )
-                        )
-                    }
-                }
+                val strokes = decodeStrokes(
+                    (item.optJSONArray("strokes") ?: JSONArray()).toString()
+                )
                 add(
                     MemoBlock(
                         id = item.getString("id"),
@@ -137,4 +122,57 @@ private fun decodeBlocks(json: String): List<MemoBlock> {
     }.getOrElse {
         listOf(MemoBlock.createText(defaultAnimation = AnimationStyle.Fade))
     }
+}
+
+private fun encodeStrokes(strokes: List<StrokeData>): String {
+    val strokesJson = JSONArray()
+    strokes.forEach { stroke ->
+        val pointsJson = JSONArray()
+        stroke.points.forEach { point ->
+            pointsJson.put(
+                JSONObject().apply {
+                    put("x", point.x.toDouble())
+                    put("y", point.y.toDouble())
+                }
+            )
+        }
+        strokesJson.put(
+            JSONObject().apply {
+                put("color", stroke.color)
+                put("width", stroke.width.toDouble())
+                put("points", pointsJson)
+            }
+        )
+    }
+    return strokesJson.toString()
+}
+
+private fun decodeStrokes(json: String): List<StrokeData> {
+    return runCatching {
+        val strokesJson = JSONArray(json)
+        buildList {
+            repeat(strokesJson.length()) { strokeIndex ->
+                val strokeJson = strokesJson.getJSONObject(strokeIndex)
+                val pointsJson = strokeJson.optJSONArray("points") ?: JSONArray()
+                val points = buildList {
+                    repeat(pointsJson.length()) { pointIndex ->
+                        val pointJson = pointsJson.getJSONObject(pointIndex)
+                        add(
+                            StrokePoint(
+                                x = pointJson.optDouble("x", 0.0).toFloat(),
+                                y = pointJson.optDouble("y", 0.0).toFloat()
+                            )
+                        )
+                    }
+                }
+                add(
+                    StrokeData(
+                        points = points,
+                        color = strokeJson.optInt("color", TextStyleSetting.DEFAULT_LIGHT_TEXT_COLOR),
+                        width = strokeJson.optDouble("width", 4.0).toFloat()
+                    )
+                )
+            }
+        }
+    }.getOrDefault(emptyList())
 }

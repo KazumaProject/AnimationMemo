@@ -11,5 +11,6 @@ interface SettingsRepository {
     suspend fun updateDefaultAnimation(animationStyle: AnimationStyle)
     suspend fun updateGifQuality(gifQuality: GifQuality)
     suspend fun updateThemeMode(themeMode: ThemeMode)
+    suspend fun updateEditorSheetOpacity(opacity: Float)
     fun currentValue(): AppSettings
 }

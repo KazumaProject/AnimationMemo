@@ -3,12 +3,13 @@ package com.kazumaproject.animationswipememo.ui.components
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,7 +21,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -37,7 +37,9 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -53,9 +55,6 @@ import com.kazumaproject.animationswipememo.domain.model.MemoBlock
 import com.kazumaproject.animationswipememo.domain.model.MemoBlockType
 import com.kazumaproject.animationswipememo.domain.model.MemoDraft
 import com.kazumaproject.animationswipememo.domain.model.MemoTextAlign
-import com.kazumaproject.animationswipememo.domain.model.StrokeData
-import com.kazumaproject.animationswipememo.domain.model.StrokePoint
-import kotlin.math.max
 import kotlin.math.roundToInt
 
 @Composable
@@ -64,20 +63,16 @@ fun PaperMemoCanvas(
     selectedBlockId: String?,
     progress: Float,
     darkTheme: Boolean,
-    isDrawingMode: Boolean,
     modifier: Modifier = Modifier,
     onBlockTap: (String) -> Unit,
     onCanvasTap: () -> Unit,
     onBlockDragStart: (String) -> Unit,
-    onBlockDrag: (String, Float, Float) -> Unit,
-    onDrawingComplete: (Float, Float, Float, Float, StrokeData) -> Unit
+    onBlockDrag: (String, Float, Float) -> Unit
 ) {
     val paper = memo.paperStyle.palette(darkTheme)
     val shape = RoundedCornerShape(28.dp)
-    val density = LocalDensity.current
     var canvasWidthPx by remember { mutableIntStateOf(1) }
     var canvasHeightPx by remember { mutableIntStateOf(1) }
-    val draftPoints = remember { mutableStateListOf<Offset>() }
 
     Box(
         modifier = modifier
@@ -90,58 +85,8 @@ fun PaperMemoCanvas(
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
-                enabled = !isDrawingMode,
                 onClick = onCanvasTap
             )
-            .pointerInput(isDrawingMode, canvasWidthPx, canvasHeightPx) {
-                if (!isDrawingMode) return@pointerInput
-                detectDragGestures(
-                    onDragStart = { offset ->
-                        draftPoints.clear()
-                        draftPoints.add(offset)
-                    },
-                    onDrag = { change, dragAmount ->
-                        val next = change.position
-                        if (draftPoints.isEmpty()) {
-                            draftPoints.add(next - dragAmount)
-                        }
-                        draftPoints.add(next)
-                    },
-                    onDragEnd = {
-                        if (draftPoints.size > 1) {
-                            val minX = draftPoints.minOf { it.x }
-                            val maxX = draftPoints.maxOf { it.x }
-                            val minY = draftPoints.minOf { it.y }
-                            val maxY = draftPoints.maxOf { it.y }
-                            val widthFraction = ((maxX - minX) / canvasWidthPx.toFloat()).coerceAtLeast(0.08f)
-                            val heightFraction = ((maxY - minY) / canvasHeightPx.toFloat()).coerceAtLeast(0.08f)
-                            val centerX = ((minX + maxX) / 2f) / canvasWidthPx.toFloat()
-                            val centerY = ((minY + maxY) / 2f) / canvasHeightPx.toFloat()
-                            val points = draftPoints.map { point ->
-                                StrokePoint(
-                                    x = ((point.x - minX) / max(maxX - minX, 1f)).coerceIn(0f, 1f),
-                                    y = ((point.y - minY) / max(maxY - minY, 1f)).coerceIn(0f, 1f)
-                                )
-                            }
-                            onDrawingComplete(
-                                centerX,
-                                centerY,
-                                widthFraction,
-                                heightFraction,
-                                StrokeData(
-                                    points = points,
-                                    color = if (darkTheme) 0xFFF7F0E2.toInt() else 0xFF2D241C.toInt(),
-                                    width = with(density) { 4.dp.toPx() }
-                                )
-                            )
-                        }
-                        draftPoints.clear()
-                    },
-                    onDragCancel = {
-                        draftPoints.clear()
-                    }
-                )
-            }
             .drawBehind {
                 val lineColor = Color(paper.lineArgb)
                 val accentColor = Color(paper.accentArgb)
@@ -178,7 +123,6 @@ fun PaperMemoCanvas(
                     selected = block.id == selectedBlockId,
                     progress = progress,
                     darkTheme = darkTheme,
-                    interactive = !isDrawingMode,
                     canvasWidthPx = canvasWidthPx,
                     canvasHeightPx = canvasHeightPx,
                     onBlockTap = onBlockTap,
@@ -189,7 +133,7 @@ fun PaperMemoCanvas(
                 MemoBlockType.Image -> ImageBlockView(
                     block = block,
                     selected = block.id == selectedBlockId,
-                    interactive = !isDrawingMode,
+                    progress = progress,
                     canvasWidthPx = canvasWidthPx,
                     canvasHeightPx = canvasHeightPx,
                     onBlockTap = onBlockTap,
@@ -200,26 +144,12 @@ fun PaperMemoCanvas(
                 MemoBlockType.Drawing -> DrawingBlockView(
                     block = block,
                     selected = block.id == selectedBlockId,
-                    interactive = !isDrawingMode,
+                    progress = progress,
                     canvasWidthPx = canvasWidthPx,
                     canvasHeightPx = canvasHeightPx,
                     onBlockTap = onBlockTap,
                     onBlockDragStart = onBlockDragStart,
                     onBlockDrag = onBlockDrag
-                )
-            }
-        }
-
-        if (draftPoints.size > 1) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val path = Path().apply {
-                    moveTo(draftPoints.first().x, draftPoints.first().y)
-                    draftPoints.drop(1).forEach { lineTo(it.x, it.y) }
-                }
-                drawPath(
-                    path = path,
-                    color = if (darkTheme) Color(0xFFF7F0E2) else Color(0xFF2D241C),
-                    style = Stroke(width = 4.dp.toPx())
                 )
             }
         }
@@ -232,7 +162,6 @@ private fun TextBlockView(
     selected: Boolean,
     progress: Float,
     darkTheme: Boolean,
-    interactive: Boolean,
     canvasWidthPx: Int,
     canvasHeightPx: Int,
     onBlockTap: (String) -> Unit,
@@ -262,7 +191,6 @@ private fun TextBlockView(
             offsetX = offsetX,
             offsetY = offsetY,
             widthModifier = Modifier.width(blockWidthDp),
-            interactive = interactive,
             onBlockTap = onBlockTap,
             onBlockDragStart = onBlockDragStart,
             onBlockDrag = onBlockDrag
@@ -281,7 +209,7 @@ private fun TextBlockView(
 private fun ImageBlockView(
     block: MemoBlock,
     selected: Boolean,
-    interactive: Boolean,
+    progress: Float,
     canvasWidthPx: Int,
     canvasHeightPx: Int,
     onBlockTap: (String) -> Unit,
@@ -289,6 +217,7 @@ private fun ImageBlockView(
     onBlockDrag: (String, Float, Float) -> Unit
 ) {
     val density = LocalDensity.current
+    val frame = MemoAnimationEngine.frameAt(block.animationStyle, block.text, progress)
     val widthPx = (canvasWidthPx * block.widthFraction).roundToInt().coerceAtLeast(80)
     val heightPx = (canvasHeightPx * block.heightFraction).roundToInt().coerceAtLeast(80)
     val widthDp = with(density) { widthPx.toDp() }
@@ -296,6 +225,7 @@ private fun ImageBlockView(
     val offsetX = (block.normalizedX * canvasWidthPx - widthPx / 2f).roundToInt()
     val offsetY = (block.normalizedY * canvasHeightPx - heightPx / 2f).roundToInt()
     val bitmap = rememberUriBitmap(block.imageUri)
+    val glowAlpha = (frame.glowRadiusPx / 26f).coerceIn(0f, 0.4f)
 
     Box(
         modifier = blockGestureModifier(
@@ -306,24 +236,42 @@ private fun ImageBlockView(
             offsetX = offsetX,
             offsetY = offsetY,
             widthModifier = Modifier.size(widthDp, heightDp),
-            interactive = interactive,
             onBlockTap = onBlockTap,
             onBlockDragStart = onBlockDragStart,
             onBlockDrag = onBlockDrag
-        )
+        ).graphicsLayer {
+            alpha = frame.alpha
+            scaleX = frame.scale
+            scaleY = frame.scale
+            rotationZ = frame.rotationDeg
+            translationX = frame.offsetXPx
+            translationY = frame.offsetYPx
+        }.drawBehind {
+            if (glowAlpha > 0f) {
+                drawRoundRect(
+                    color = Color.White.copy(alpha = glowAlpha),
+                    cornerRadius = CornerRadius(18.dp.toPx())
+                )
+            }
+        }
     ) {
         if (bitmap != null) {
             Image(
                 bitmap = bitmap,
                 contentDescription = "Inserted image",
-                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(16.dp)),
                 contentScale = ContentScale.Crop
             )
         } else {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(16.dp)),
+                    .background(
+                        MaterialTheme.colorScheme.surfaceVariant,
+                        RoundedCornerShape(16.dp)
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 Text("Image", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -336,7 +284,7 @@ private fun ImageBlockView(
 private fun DrawingBlockView(
     block: MemoBlock,
     selected: Boolean,
-    interactive: Boolean,
+    progress: Float,
     canvasWidthPx: Int,
     canvasHeightPx: Int,
     onBlockTap: (String) -> Unit,
@@ -344,14 +292,16 @@ private fun DrawingBlockView(
     onBlockDrag: (String, Float, Float) -> Unit
 ) {
     val density = LocalDensity.current
+    val frame = MemoAnimationEngine.frameAt(block.animationStyle, block.text, progress)
     val widthPx = (canvasWidthPx * block.widthFraction).roundToInt().coerceAtLeast(80)
     val heightPx = (canvasHeightPx * block.heightFraction).roundToInt().coerceAtLeast(80)
     val widthDp = with(density) { widthPx.toDp() }
     val heightDp = with(density) { heightPx.toDp() }
     val offsetX = (block.normalizedX * canvasWidthPx - widthPx / 2f).roundToInt()
     val offsetY = (block.normalizedY * canvasHeightPx - heightPx / 2f).roundToInt()
+    val glowAlpha = (frame.glowRadiusPx / 26f).coerceIn(0f, 0.28f)
 
-    Canvas(
+    androidx.compose.foundation.Canvas(
         modifier = blockGestureModifier(
             block = block,
             selected = selected,
@@ -360,11 +310,24 @@ private fun DrawingBlockView(
             offsetX = offsetX,
             offsetY = offsetY,
             widthModifier = Modifier.size(widthDp, heightDp),
-            interactive = interactive,
             onBlockTap = onBlockTap,
             onBlockDragStart = onBlockDragStart,
             onBlockDrag = onBlockDrag
-        )
+        ).graphicsLayer {
+            alpha = frame.alpha
+            scaleX = frame.scale
+            scaleY = frame.scale
+            rotationZ = frame.rotationDeg
+            translationX = frame.offsetXPx
+            translationY = frame.offsetYPx
+        }.drawBehind {
+            if (glowAlpha > 0f) {
+                drawRoundRect(
+                    color = Color.White.copy(alpha = glowAlpha),
+                    cornerRadius = CornerRadius(18.dp.toPx())
+                )
+            }
+        }
     ) {
         block.strokes.forEach { stroke ->
             if (stroke.points.size < 2) return@forEach
@@ -392,7 +355,6 @@ private fun blockGestureModifier(
     offsetX: Int,
     offsetY: Int,
     widthModifier: Modifier,
-    interactive: Boolean,
     onBlockTap: (String) -> Unit,
     onBlockDragStart: (String) -> Unit,
     onBlockDrag: (String, Float, Float) -> Unit
@@ -401,25 +363,54 @@ private fun blockGestureModifier(
         .then(widthModifier)
         .offset { IntOffset(offsetX, offsetY) }
         .background(
-            color = if (selected) MaterialTheme.colorScheme.secondary.copy(alpha = 0.08f) else Color.Transparent,
+            color = if (selected) {
+                MaterialTheme.colorScheme.secondary.copy(alpha = 0.08f)
+            } else {
+                Color.Transparent
+            },
             shape = RoundedCornerShape(14.dp)
         )
         .pointerInput(block.id, canvasWidthPx, canvasHeightPx) {
-            if (!interactive) return@pointerInput
-            detectDragGestures(
-                onDragStart = { onBlockDragStart(block.id) },
-                onDrag = { _, dragAmount ->
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                var dragStarted = false
+                val postSlop = awaitTouchSlopOrCancellation(down.id) { change, over ->
+                    if (!dragStarted) {
+                        dragStarted = true
+                        onBlockDragStart(block.id)
+                    }
+                    change.consume()
                     onBlockDrag(
                         block.id,
-                        dragAmount.x / canvasWidthPx.toFloat(),
-                        dragAmount.y / canvasHeightPx.toFloat()
+                        over.x / canvasWidthPx.toFloat(),
+                        over.y / canvasHeightPx.toFloat()
                     )
                 }
-            )
-        }
-        .pointerInput(block.id) {
-            if (!interactive) return@pointerInput
-            detectTapGestures(onTap = { onBlockTap(block.id) })
+
+                if (!dragStarted) {
+                    if (waitForUpOrCancellation() != null) {
+                        onBlockTap(block.id)
+                    }
+                } else if (postSlop != null) {
+                    var pointerChange = postSlop
+                    while (true) {
+                        val currentChange = pointerChange ?: break
+                        if (currentChange.changedToUpIgnoreConsumed()) break
+                        val delta = currentChange.positionChange()
+                        if (delta != Offset.Zero) {
+                            currentChange.consume()
+                            onBlockDrag(
+                                block.id,
+                                delta.x / canvasWidthPx.toFloat(),
+                                delta.y / canvasHeightPx.toFloat()
+                            )
+                        }
+                        val event = awaitPointerEvent()
+                        val tracked = event.changes.firstOrNull { it.id == down.id } ?: break
+                        pointerChange = tracked
+                    }
+                }
+            }
         }
 }
 

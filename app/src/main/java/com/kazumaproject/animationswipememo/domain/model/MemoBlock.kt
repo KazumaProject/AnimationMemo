@@ -64,6 +64,7 @@ data class MemoBlock(
 
         fun createImage(
             imageUri: String,
+            animationStyle: AnimationStyle = AnimationStyle.None,
             x: Float = 0.5f,
             y: Float = 0.45f
         ): MemoBlock {
@@ -75,7 +76,7 @@ data class MemoBlock(
                 widthFraction = 0.42f,
                 heightFraction = 0.24f,
                 text = "",
-                animationStyle = AnimationStyle.None,
+                animationStyle = animationStyle,
                 textStyle = TextStyleSetting(),
                 imageUri = imageUri,
                 strokes = emptyList()
@@ -87,7 +88,8 @@ data class MemoBlock(
             y: Float,
             widthFraction: Float,
             heightFraction: Float,
-            strokes: List<StrokeData>
+            strokes: List<StrokeData>,
+            animationStyle: AnimationStyle = AnimationStyle.None
         ): MemoBlock {
             return MemoBlock(
                 id = UUID.randomUUID().toString(),
@@ -97,7 +99,7 @@ data class MemoBlock(
                 widthFraction = widthFraction.coerceIn(0.08f, 0.8f),
                 heightFraction = heightFraction.coerceIn(0.08f, 0.8f),
                 text = "",
-                animationStyle = AnimationStyle.None,
+                animationStyle = animationStyle,
                 textStyle = TextStyleSetting(),
                 imageUri = null,
                 strokes = strokes

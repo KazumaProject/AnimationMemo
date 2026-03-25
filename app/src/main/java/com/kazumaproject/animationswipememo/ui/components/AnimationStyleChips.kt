@@ -17,6 +17,7 @@ import com.kazumaproject.animationswipememo.domain.model.AnimationStyle
 @Composable
 fun AnimationStyleChips(
     selected: AnimationStyle,
+    styles: List<AnimationStyle> = AnimationStyle.entries.toList(),
     onSelect: (AnimationStyle) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -25,7 +26,7 @@ fun AnimationStyleChips(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        AnimationStyle.entries.forEach { style ->
+        styles.forEach { style ->
             FilterChip(
                 selected = style == selected,
                 onClick = { onSelect(style) },
