@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 data class MemoListUiState(
     val memos: List<MemoDraft> = emptyList(),
@@ -64,6 +65,25 @@ class MemoListViewModel(
         viewModelScope.launch {
             memoRepository.deleteAllMemos()
         }
+    }
+
+    fun duplicateMemo(memo: MemoDraft) {
+        viewModelScope.launch {
+            val timestamp = System.currentTimeMillis()
+            memoRepository.upsertMemo(
+                memo.copy(
+                    id = UUID.randomUUID().toString(),
+                    title = duplicateTitleFor(memo),
+                    createdAt = timestamp,
+                    updatedAt = timestamp
+                )
+            )
+        }
+    }
+
+    private fun duplicateTitleFor(memo: MemoDraft): String {
+        val baseTitle = memo.title.trim().ifBlank { "Untitled memo" }
+        return "$baseTitle Copy".take(60)
     }
 
     companion object {

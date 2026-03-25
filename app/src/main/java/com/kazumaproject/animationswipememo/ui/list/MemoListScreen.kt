@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.FileCopy
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.AlertDialog
@@ -226,8 +227,11 @@ fun MemoListScreen(
                                 memo = memo,
                                 darkTheme = isDarkTheme,
                                 onClick = { onMemoClick(memo.id) },
-                                onCopy = {
+                                onCopyText = {
                                     clipboardManager.setText(AnnotatedString(memo.copyableContent()))
+                                },
+                                onDuplicate = {
+                                    viewModel.duplicateMemo(memo)
                                 },
                                 onDelete = {
                                     pendingDeleteMemo = memo
@@ -270,7 +274,8 @@ private fun MemoListItem(
     memo: MemoDraft,
     darkTheme: Boolean,
     onClick: () -> Unit,
-    onCopy: () -> Unit,
+    onCopyText: () -> Unit,
+    onDuplicate: () -> Unit,
     onDelete: () -> Unit
 ) {
     val formatter = remember { SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()) }
@@ -343,12 +348,22 @@ private fun MemoListItem(
             onDismissRequest = { isMenuExpanded = false }
         ) {
             DropdownMenuItem(
-                text = { Text("Copy") },
+                text = { Text("Copy text") },
                 leadingIcon = {
                     Icon(Icons.Outlined.ContentCopy, contentDescription = null)
                 },
                 onClick = {
-                    onCopy()
+                    onCopyText()
+                    isMenuExpanded = false
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("Duplicate memo") },
+                leadingIcon = {
+                    Icon(Icons.Outlined.FileCopy, contentDescription = null)
+                },
+                onClick = {
+                    onDuplicate()
                     isMenuExpanded = false
                 }
             )

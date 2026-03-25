@@ -156,6 +156,9 @@ enum class PaperStyle(
         return if (isDark) darkPalette else lightPalette
     }
 
+    val supportsTopAlignedBlocks: Boolean
+        get() = this == PlainWhite
+
     companion object {
         fun fromName(name: String?): PaperStyle {
             return entries.firstOrNull { it.name == name } ?: WarmNote

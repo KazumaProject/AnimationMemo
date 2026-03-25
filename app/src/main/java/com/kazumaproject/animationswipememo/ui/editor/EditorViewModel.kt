@@ -342,6 +342,7 @@ class EditorViewModel(
 
     fun moveBlock(blockId: String, deltaXNormalized: Float, deltaYNormalized: Float) {
         val draft = draftState.value ?: return
+        val minY = minimumBlockYFor(draft.paperStyle)
         draftState.value = draft.copy(
             blocks = draft.blocks.map { block ->
                 if (block.id != blockId) {
@@ -349,7 +350,7 @@ class EditorViewModel(
                 } else {
                     block.copy(
                         normalizedX = (block.normalizedX + deltaXNormalized).coerceIn(0.1f, 0.9f),
-                        normalizedY = (block.normalizedY + deltaYNormalized).coerceIn(0.14f, 0.9f)
+                        normalizedY = (block.normalizedY + deltaYNormalized).coerceIn(minY, 0.9f)
                     )
                 }
             },
@@ -359,10 +360,11 @@ class EditorViewModel(
     }
 
     fun moveSelectedBlock(deltaXNormalized: Float, deltaYNormalized: Float) {
+        val minY = minimumBlockYFor(draftState.value?.paperStyle ?: return)
         updateSelectedBlock { block ->
             block.copy(
                 normalizedX = (block.normalizedX + deltaXNormalized).coerceIn(0.1f, 0.9f),
-                normalizedY = (block.normalizedY + deltaYNormalized).coerceIn(0.14f, 0.9f)
+                normalizedY = (block.normalizedY + deltaYNormalized).coerceIn(minY, 0.9f)
             )
         }
     }
@@ -494,6 +496,10 @@ class EditorViewModel(
         viewModelScope.launch {
             effects.emit(EditorEffect.ShowMessage(message))
         }
+    }
+
+    private fun minimumBlockYFor(paperStyle: PaperStyle): Float {
+        return if (paperStyle.supportsTopAlignedBlocks) 0.02f else 0.14f
     }
 
     private suspend fun insertDrawingBlock(
