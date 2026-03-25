@@ -27,7 +27,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
 
     private val frameRenderer: MemoBitmapFrameRenderer by lazy {
-        MemoBitmapFrameRenderer()
+        MemoBitmapFrameRenderer(context)
     }
 
     override val memoRepository: MemoRepository by lazy {

@@ -9,6 +9,8 @@ data class EditorUiState(
     val settings: AppSettings = AppSettings(),
     val selectedBlockId: String? = null,
     val isEditorSheetVisible: Boolean = false,
+    val isToolPaletteVisible: Boolean = true,
+    val isDrawingMode: Boolean = false,
     val isLoading: Boolean = true,
     val isWorking: Boolean = false,
     val isExistingMemo: Boolean = false

@@ -13,6 +13,7 @@ import com.kazumaproject.animationswipememo.domain.export.ExportRequest
 import com.kazumaproject.animationswipememo.domain.model.AnimationStyle
 import com.kazumaproject.animationswipememo.domain.model.MemoBlock
 import com.kazumaproject.animationswipememo.domain.model.MemoDraft
+import com.kazumaproject.animationswipememo.domain.model.StrokeData
 import com.kazumaproject.animationswipememo.domain.model.TextStyleSetting
 import com.kazumaproject.animationswipememo.domain.repository.MemoRepository
 import com.kazumaproject.animationswipememo.domain.repository.SettingsRepository
@@ -39,20 +40,35 @@ class EditorViewModel(
     private val existingMemoState = MutableStateFlow(false)
     private val selectedBlockIdState = MutableStateFlow<String?>(null)
     private val editorSheetVisibleState = MutableStateFlow(false)
+    private val toolPaletteVisibleState = MutableStateFlow(true)
+    private val drawingModeState = MutableStateFlow(false)
     private val effects = MutableSharedFlow<EditorEffect>()
 
     val uiState: StateFlow<EditorUiState> = combine(
         combine(
-            draftState,
-            settingsRepository.settings,
-            selectedBlockIdState,
-            editorSheetVisibleState
-        ) { draft, settings, selectedBlockId, isEditorSheetVisible ->
-            PartialEditorUiState(
-                draft = draft,
-                settings = settings,
-                selectedBlockId = selectedBlockId,
-                isEditorSheetVisible = isEditorSheetVisible
+            combine(
+                draftState,
+                settingsRepository.settings,
+                selectedBlockIdState,
+                editorSheetVisibleState
+            ) { draft, settings, selectedBlockId, isEditorSheetVisible ->
+                PartialEditorUiStateA(
+                    draft = draft,
+                    settings = settings,
+                    selectedBlockId = selectedBlockId,
+                    isEditorSheetVisible = isEditorSheetVisible
+                )
+            },
+            toolPaletteVisibleState,
+            drawingModeState
+        ) { partialA, isToolPaletteVisible, isDrawingMode ->
+            PartialEditorUiStateB(
+                draft = partialA.draft,
+                settings = partialA.settings,
+                selectedBlockId = partialA.selectedBlockId,
+                isEditorSheetVisible = partialA.isEditorSheetVisible,
+                isToolPaletteVisible = isToolPaletteVisible,
+                isDrawingMode = isDrawingMode
             )
         },
         loadingState,
@@ -64,6 +80,8 @@ class EditorViewModel(
             settings = partial.settings,
             selectedBlockId = partial.selectedBlockId,
             isEditorSheetVisible = partial.isEditorSheetVisible,
+            isToolPaletteVisible = partial.isToolPaletteVisible,
+            isDrawingMode = partial.isDrawingMode,
             isLoading = isLoading,
             isWorking = isWorking,
             isExistingMemo = isExisting
@@ -89,9 +107,9 @@ class EditorViewModel(
 
     fun effects() = effects.asSharedFlow()
 
-    fun addBlock() {
+    fun addTextBlock() {
         val draft = draftState.value ?: return
-        val newBlock = MemoBlock.create(
+        val newBlock = MemoBlock.createText(
             defaultAnimation = uiState.value.settings.defaultAnimation,
             y = (0.28f + (draft.blocks.size * 0.12f)).coerceAtMost(0.8f)
         )
@@ -101,6 +119,40 @@ class EditorViewModel(
         )
         selectedBlockIdState.value = newBlock.id
         editorSheetVisibleState.value = true
+    }
+
+    fun addImageBlock(imageUri: String) {
+        val draft = draftState.value ?: return
+        val newBlock = MemoBlock.createImage(imageUri = imageUri)
+        draftState.value = draft.copy(
+            blocks = draft.blocks + newBlock,
+            updatedAt = System.currentTimeMillis()
+        )
+        selectedBlockIdState.value = newBlock.id
+        editorSheetVisibleState.value = false
+        drawingModeState.value = false
+    }
+
+    fun addDrawingBlock(
+        centerX: Float,
+        centerY: Float,
+        widthFraction: Float,
+        heightFraction: Float,
+        stroke: StrokeData
+    ) {
+        val draft = draftState.value ?: return
+        val newBlock = MemoBlock.createDrawing(
+            x = centerX,
+            y = centerY,
+            widthFraction = widthFraction,
+            heightFraction = heightFraction,
+            strokes = listOf(stroke)
+        )
+        draftState.value = draft.copy(
+            blocks = draft.blocks + newBlock,
+            updatedAt = System.currentTimeMillis()
+        )
+        selectedBlockIdState.value = newBlock.id
     }
 
     fun selectBlock(blockId: String) {
@@ -119,6 +171,19 @@ class EditorViewModel(
 
     fun clearSelection() {
         selectedBlockIdState.value = null
+    }
+
+    fun toggleToolPaletteVisibility() {
+        toolPaletteVisibleState.value = !toolPaletteVisibleState.value
+    }
+
+    fun toggleDrawingMode() {
+        drawingModeState.value = !drawingModeState.value
+        editorSheetVisibleState.value = false
+    }
+
+    fun finishDrawingMode() {
+        drawingModeState.value = false
     }
 
     fun showEditorSheet() {
@@ -172,7 +237,7 @@ class EditorViewModel(
         val selectedId = selectedBlockIdState.value ?: return
         val remaining = draft.blocks.filterNot { it.id == selectedId }
         val fallback = remaining.ifEmpty {
-            listOf(MemoBlock.create(defaultAnimation = uiState.value.settings.defaultAnimation))
+            listOf(MemoBlock.createText(defaultAnimation = uiState.value.settings.defaultAnimation))
         }
         draftState.value = draft.copy(
             blocks = fallback,
@@ -292,9 +357,18 @@ class EditorViewModel(
     }
 }
 
-private data class PartialEditorUiState(
+private data class PartialEditorUiStateA(
     val draft: MemoDraft?,
     val settings: com.kazumaproject.animationswipememo.domain.model.AppSettings,
     val selectedBlockId: String?,
     val isEditorSheetVisible: Boolean
+)
+
+private data class PartialEditorUiStateB(
+    val draft: MemoDraft?,
+    val settings: com.kazumaproject.animationswipememo.domain.model.AppSettings,
+    val selectedBlockId: String?,
+    val isEditorSheetVisible: Boolean,
+    val isToolPaletteVisible: Boolean,
+    val isDrawingMode: Boolean
 )

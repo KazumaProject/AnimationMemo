@@ -2,9 +2,12 @@ package com.kazumaproject.animationswipememo.data.local
 
 import com.kazumaproject.animationswipememo.domain.model.AnimationStyle
 import com.kazumaproject.animationswipememo.domain.model.MemoBlock
+import com.kazumaproject.animationswipememo.domain.model.MemoBlockType
 import com.kazumaproject.animationswipememo.domain.model.MemoDraft
 import com.kazumaproject.animationswipememo.domain.model.MemoTextAlign
 import com.kazumaproject.animationswipememo.domain.model.PaperStyle
+import com.kazumaproject.animationswipememo.domain.model.StrokeData
+import com.kazumaproject.animationswipememo.domain.model.StrokePoint
 import com.kazumaproject.animationswipememo.domain.model.TextStyleSetting
 import org.json.JSONArray
 import org.json.JSONObject
@@ -32,17 +35,40 @@ fun MemoDraft.toEntity(): MemoEntity {
 private fun encodeBlocks(blocks: List<MemoBlock>): String {
     val array = JSONArray()
     blocks.forEach { block ->
+        val strokesJson = JSONArray()
+        block.strokes.forEach { stroke ->
+            val pointsJson = JSONArray()
+            stroke.points.forEach { point ->
+                pointsJson.put(
+                    JSONObject().apply {
+                        put("x", point.x.toDouble())
+                        put("y", point.y.toDouble())
+                    }
+                )
+            }
+            strokesJson.put(
+                JSONObject().apply {
+                    put("color", stroke.color)
+                    put("width", stroke.width.toDouble())
+                    put("points", pointsJson)
+                }
+            )
+        }
         array.put(
             JSONObject().apply {
                 put("id", block.id)
+                put("type", block.type.name)
                 put("text", block.text)
                 put("x", block.normalizedX.toDouble())
                 put("y", block.normalizedY.toDouble())
                 put("width", block.widthFraction.toDouble())
+                put("height", block.heightFraction.toDouble())
                 put("animation", block.animationStyle.name)
                 put("fontSize", block.textStyle.fontSize.toDouble())
                 put("textColor", block.textStyle.textColor)
                 put("textAlign", block.textStyle.textAlign.name)
+                put("imageUri", block.imageUri)
+                put("strokes", strokesJson)
             }
         )
     }
@@ -55,13 +81,43 @@ private fun decodeBlocks(json: String): List<MemoBlock> {
         buildList {
             repeat(array.length()) { index ->
                 val item = array.getJSONObject(index)
+                val type = MemoBlockType.valueOf(
+                    item.optString("type", MemoBlockType.Text.name)
+                )
+                val strokes = buildList {
+                    val strokesJson = item.optJSONArray("strokes") ?: JSONArray()
+                    repeat(strokesJson.length()) { strokeIndex ->
+                        val strokeJson = strokesJson.getJSONObject(strokeIndex)
+                        val pointsJson = strokeJson.optJSONArray("points") ?: JSONArray()
+                        val points = buildList {
+                            repeat(pointsJson.length()) { pointIndex ->
+                                val pointJson = pointsJson.getJSONObject(pointIndex)
+                                add(
+                                    StrokePoint(
+                                        x = pointJson.optDouble("x", 0.0).toFloat(),
+                                        y = pointJson.optDouble("y", 0.0).toFloat()
+                                    )
+                                )
+                            }
+                        }
+                        add(
+                            StrokeData(
+                                points = points,
+                                color = strokeJson.optInt("color", TextStyleSetting.DEFAULT_LIGHT_TEXT_COLOR),
+                                width = strokeJson.optDouble("width", 4.0).toFloat()
+                            )
+                        )
+                    }
+                }
                 add(
                     MemoBlock(
                         id = item.getString("id"),
+                        type = type,
                         text = item.optString("text"),
                         normalizedX = item.optDouble("x", 0.5).toFloat(),
                         normalizedY = item.optDouble("y", 0.35).toFloat(),
                         widthFraction = item.optDouble("width", 0.52).toFloat(),
+                        heightFraction = item.optDouble("height", 0.12).toFloat(),
                         animationStyle = AnimationStyle.valueOf(
                             item.optString("animation", AnimationStyle.Fade.name)
                         ),
@@ -71,12 +127,14 @@ private fun decodeBlocks(json: String): List<MemoBlock> {
                             textAlign = MemoTextAlign.valueOf(
                                 item.optString("textAlign", MemoTextAlign.Center.name)
                             )
-                        )
+                        ),
+                        imageUri = item.optString("imageUri").ifBlank { null },
+                        strokes = strokes
                     )
                 )
             }
         }
     }.getOrElse {
-        listOf(MemoBlock.create(defaultAnimation = AnimationStyle.Fade))
+        listOf(MemoBlock.createText(defaultAnimation = AnimationStyle.Fade))
     }
 }

@@ -1,21 +1,29 @@
 package com.kazumaproject.animationswipememo.data.export
 
+import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.RectF
+import android.net.Uri
 import android.os.Build
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
 import com.kazumaproject.animationswipememo.domain.animation.MemoAnimationEngine
-import com.kazumaproject.animationswipememo.domain.model.AnimationStyle
 import com.kazumaproject.animationswipememo.domain.model.MemoBlock
+import com.kazumaproject.animationswipememo.domain.model.MemoBlockType
 import com.kazumaproject.animationswipememo.domain.model.MemoDraft
 import com.kazumaproject.animationswipememo.domain.model.MemoTextAlign
 import kotlin.math.max
 
-class MemoBitmapFrameRenderer {
+class MemoBitmapFrameRenderer(
+    private val context: Context
+) {
+    private val imageCache = mutableMapOf<String, Bitmap?>()
+
     fun renderFrame(
         memo: MemoDraft,
         width: Int,
@@ -86,30 +94,24 @@ class MemoBitmapFrameRenderer {
         }
 
         memo.blocks.forEach { block ->
-            drawBlock(
-                canvas = canvas,
-                cardRect = cardRect,
-                block = block,
-                progress = progress,
-                darkTheme = darkTheme
-            )
+            when (block.type) {
+                MemoBlockType.Text -> drawTextBlock(canvas, cardRect, block, progress, darkTheme)
+                MemoBlockType.Image -> drawImageBlock(canvas, cardRect, block)
+                MemoBlockType.Drawing -> drawDrawingBlock(canvas, cardRect, block)
+            }
         }
 
         return bitmap
     }
 
-    private fun drawBlock(
+    private fun drawTextBlock(
         canvas: Canvas,
         cardRect: RectF,
         block: MemoBlock,
         progress: Float,
         darkTheme: Boolean
     ) {
-        val frame = MemoAnimationEngine.frameAt(
-            animationStyle = block.animationStyle,
-            text = block.text,
-            progress = progress
-        )
+        val frame = MemoAnimationEngine.frameAt(block.animationStyle, block.text, progress)
         val displayedText = frame.displayedText(block.text.ifBlank { "Text" })
         val availableWidth = (cardRect.width() * block.widthFraction).toInt().coerceAtLeast(120)
         val resolvedTextColor = block.textStyle.resolvedTextColor(darkTheme)
@@ -153,6 +155,65 @@ class MemoBitmapFrameRenderer {
 
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
             textPaint.clearShadowLayer()
+        }
+    }
+
+    private fun drawImageBlock(
+        canvas: Canvas,
+        cardRect: RectF,
+        block: MemoBlock
+    ) {
+        val imageUri = block.imageUri ?: return
+        val bitmap = loadBitmap(imageUri) ?: return
+        val width = cardRect.width() * block.widthFraction
+        val height = cardRect.height() * block.heightFraction
+        val cx = cardRect.left + block.normalizedX * cardRect.width()
+        val cy = cardRect.top + block.normalizedY * cardRect.height()
+        val dst = RectF(
+            cx - width / 2f,
+            cy - height / 2f,
+            cx + width / 2f,
+            cy + height / 2f
+        )
+        canvas.drawBitmap(bitmap, null, dst, null)
+    }
+
+    private fun drawDrawingBlock(
+        canvas: Canvas,
+        cardRect: RectF,
+        block: MemoBlock
+    ) {
+        val left = cardRect.left + (block.normalizedX - block.widthFraction / 2f) * cardRect.width()
+        val top = cardRect.top + (block.normalizedY - block.heightFraction / 2f) * cardRect.height()
+        val width = cardRect.width() * block.widthFraction
+        val height = cardRect.height() * block.heightFraction
+
+        block.strokes.forEach { stroke ->
+            if (stroke.points.size < 2) return@forEach
+            val path = Path()
+            stroke.points.forEachIndexed { index, point ->
+                val x = left + point.x * width
+                val y = top + point.y * height
+                if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = stroke.color
+                style = Paint.Style.STROKE
+                strokeWidth = stroke.width
+                strokeCap = Paint.Cap.ROUND
+                strokeJoin = Paint.Join.ROUND
+            }
+            canvas.drawPath(path, paint)
+        }
+    }
+
+    private fun loadBitmap(imageUri: String): Bitmap? {
+        return imageCache.getOrPut(imageUri) {
+            runCatching {
+                context.contentResolver.openInputStream(Uri.parse(imageUri)).use { input ->
+                    BitmapFactory.decodeStream(input)
+                }
+            }.getOrNull()
         }
     }
 }
