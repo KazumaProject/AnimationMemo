@@ -9,9 +9,18 @@ data class MemoDraft(
     val createdAt: Long,
     val updatedAt: Long
 ) {
+    val searchableText: String
+        get() = blocks
+            .filter { it.type == MemoBlockType.Text }
+            .mapNotNull { it.text.trim().takeIf(String::isNotBlank) }
+            .joinToString(" ")
+
     val previewText: String
         get() = blocks.firstOrNull { it.type == MemoBlockType.Text && it.text.isNotBlank() }?.text
             ?: summaryLabel
+
+    val displayPreviewText: String
+        get() = previewText.ifBlank { "(empty memo)" }
 
     val hasContent: Boolean
         get() = blocks.any { block ->

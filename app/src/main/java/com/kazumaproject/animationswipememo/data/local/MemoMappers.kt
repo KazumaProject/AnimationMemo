@@ -70,6 +70,7 @@ private fun encodeBlocks(blocks: List<MemoBlock>): String {
                 put("y", block.normalizedY.toDouble())
                 put("width", block.widthFraction.toDouble())
                 put("height", block.heightFraction.toDouble())
+                put("contentAspectRatio", block.contentAspectRatio?.toDouble())
                 put("animation", block.animationStyle.name)
                 put("fontSize", block.textStyle.fontSize.toDouble())
                 put("textColor", block.textStyle.textColor)
@@ -103,6 +104,10 @@ private fun decodeBlocks(json: String): List<MemoBlock> {
                         normalizedY = item.optDouble("y", 0.35).toFloat(),
                         widthFraction = item.optDouble("width", 0.52).toFloat(),
                         heightFraction = item.optDouble("height", 0.12).toFloat(),
+                        contentAspectRatio = item.optDouble(
+                            "contentAspectRatio",
+                            item.optDouble("width", 0.52) / item.optDouble("height", 0.12)
+                        ).toFloat(),
                         animationStyle = AnimationStyle.valueOf(
                             item.optString("animation", AnimationStyle.Fade.name)
                         ),

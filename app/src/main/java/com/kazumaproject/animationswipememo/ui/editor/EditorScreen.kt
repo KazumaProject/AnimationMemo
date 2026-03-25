@@ -1,6 +1,8 @@
 package com.kazumaproject.animationswipememo.ui.editor
 
 import android.content.Intent
+import android.graphics.BitmapFactory
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.LinearEasing
@@ -95,7 +97,10 @@ fun EditorScreen(
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
             }
-            viewModel.addImageBlock(uri.toString())
+            viewModel.addImageBlock(
+                imageUri = uri.toString(),
+                contentAspectRatio = readImageAspectRatio(context, uri)
+            )
         }
     }
 
@@ -124,6 +129,8 @@ fun EditorScreen(
                 onTextChange = viewModel::updateSelectedBlockText,
                 onAnimationChange = viewModel::updateSelectedBlockAnimation,
                 onFontSizeChange = viewModel::updateSelectedBlockFontSize,
+                onWidthChange = viewModel::updateSelectedBlockWidth,
+                onHeightChange = viewModel::updateSelectedBlockHeight,
                 onDeleteBlock = viewModel::deleteSelectedBlock,
                 onClose = viewModel::hideEditorSheet
             )
@@ -295,8 +302,6 @@ private fun EditorCanvasContent(
                 ToolButton("GIF", Icons.Outlined.FileDownload, onExportGif)
                 ToolButton("PNG", Icons.Outlined.Image, onExportPng)
                 ToolButton("Discard", Icons.Outlined.DeleteSweep, onDiscard)
-                ToolButton("Memos", Icons.AutoMirrored.Outlined.List, onOpenList)
-                ToolButton("Settings", Icons.Outlined.Settings, onOpenSettings)
             }
         }
 
@@ -332,6 +337,8 @@ private fun BlockEditorSheet(
     onTextChange: (String) -> Unit,
     onAnimationChange: (AnimationStyle) -> Unit,
     onFontSizeChange: (Float) -> Unit,
+    onWidthChange: (Float) -> Unit,
+    onHeightChange: (Float) -> Unit,
     onDeleteBlock: () -> Unit,
     onClose: () -> Unit
 ) {
@@ -406,6 +413,29 @@ private fun BlockEditorSheet(
                     valueRange = TextStyleSetting.MIN_FONT_SIZE..TextStyleSetting.MAX_FONT_SIZE
                 )
             }
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "Width: ${(block.widthFraction * 100f).toInt()}%",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Slider(
+                    value = block.widthFraction,
+                    onValueChange = onWidthChange,
+                    valueRange = 0.12f..0.9f
+                )
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "Height: ${(block.heightFraction * 100f).toInt()}%",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Slider(
+                    value = block.heightFraction,
+                    onValueChange = onHeightChange,
+                    valueRange = 0.12f..0.9f
+                )
+            }
         }
 
         Row(
@@ -420,4 +450,21 @@ private fun BlockEditorSheet(
             }
         }
     }
+}
+
+private fun readImageAspectRatio(
+    context: android.content.Context,
+    uri: Uri
+): Float {
+    val options = BitmapFactory.Options().apply {
+        inJustDecodeBounds = true
+    }
+    runCatching {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            BitmapFactory.decodeStream(input, null, options)
+        }
+    }
+    val width = options.outWidth.takeIf { it > 0 } ?: return 1f
+    val height = options.outHeight.takeIf { it > 0 } ?: return 1f
+    return width.toFloat() / height.toFloat()
 }

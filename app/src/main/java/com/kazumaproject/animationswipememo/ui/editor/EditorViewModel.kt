@@ -132,9 +132,13 @@ class EditorViewModel(
         editorSheetVisibleState.value = true
     }
 
-    fun addImageBlock(imageUri: String) {
+    fun addImageBlock(imageUri: String, contentAspectRatio: Float) {
         val draft = draftState.value ?: return
-        val newBlock = MemoBlock.createImage(imageUri = imageUri)
+        val newBlock = MemoBlock.createImage(
+            imageUri = imageUri,
+            contentAspectRatio = contentAspectRatio,
+            animationStyle = uiState.value.settings.defaultAnimation
+        )
         draftState.value = draft.copy(
             blocks = draft.blocks + newBlock,
             updatedAt = System.currentTimeMillis()
@@ -272,6 +276,18 @@ class EditorViewModel(
                     )
                 )
             )
+        }
+    }
+
+    fun updateSelectedBlockWidth(widthFraction: Float) {
+        updateSelectedBlock { block ->
+            block.copy(widthFraction = widthFraction.coerceIn(0.12f, 0.9f))
+        }
+    }
+
+    fun updateSelectedBlockHeight(heightFraction: Float) {
+        updateSelectedBlock { block ->
+            block.copy(heightFraction = heightFraction.coerceIn(0.12f, 0.9f))
         }
     }
 

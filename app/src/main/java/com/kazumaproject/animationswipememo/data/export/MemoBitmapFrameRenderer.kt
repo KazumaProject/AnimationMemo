@@ -13,10 +13,12 @@ import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
 import com.kazumaproject.animationswipememo.domain.animation.MemoAnimationEngine
+import com.kazumaproject.animationswipememo.domain.model.fitContentSize
 import com.kazumaproject.animationswipememo.domain.model.MemoBlock
 import com.kazumaproject.animationswipememo.domain.model.MemoBlockType
 import com.kazumaproject.animationswipememo.domain.model.MemoDraft
 import com.kazumaproject.animationswipememo.domain.model.MemoTextAlign
+import com.kazumaproject.animationswipememo.domain.model.resolvedContentAspectRatio
 import kotlin.math.max
 
 class MemoBitmapFrameRenderer(
@@ -167,11 +169,21 @@ class MemoBitmapFrameRenderer(
         val imageUri = block.imageUri ?: return
         val bitmap = loadBitmap(imageUri) ?: return
         val frame = MemoAnimationEngine.frameAt(block.animationStyle, "", progress)
-        val width = cardRect.width() * block.widthFraction
-        val height = cardRect.height() * block.heightFraction
+        val boxWidth = cardRect.width() * block.widthFraction
+        val boxHeight = cardRect.height() * block.heightFraction
+        val fittedSize = fitContentSize(
+            boxWidth = boxWidth,
+            boxHeight = boxHeight,
+            aspectRatio = block.resolvedContentAspectRatio()
+        )
         val cx = cardRect.left + block.normalizedX * cardRect.width()
         val cy = cardRect.top + block.normalizedY * cardRect.height()
-        val dst = RectF(-width / 2f, -height / 2f, width / 2f, height / 2f)
+        val dst = RectF(
+            -fittedSize.width / 2f,
+            -fittedSize.height / 2f,
+            fittedSize.width / 2f,
+            fittedSize.height / 2f
+        )
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             alpha = (frame.alpha.coerceIn(0f, 1f) * 255f).toInt()
             isFilterBitmap = true
@@ -204,12 +216,17 @@ class MemoBitmapFrameRenderer(
         progress: Float
     ) {
         val frame = MemoAnimationEngine.frameAt(block.animationStyle, "", progress)
-        val width = cardRect.width() * block.widthFraction
-        val height = cardRect.height() * block.heightFraction
+        val boxWidth = cardRect.width() * block.widthFraction
+        val boxHeight = cardRect.height() * block.heightFraction
+        val fittedSize = fitContentSize(
+            boxWidth = boxWidth,
+            boxHeight = boxHeight,
+            aspectRatio = block.resolvedContentAspectRatio()
+        )
         val cx = cardRect.left + block.normalizedX * cardRect.width()
         val cy = cardRect.top + block.normalizedY * cardRect.height()
-        val left = -width / 2f
-        val top = -height / 2f
+        val left = -fittedSize.width / 2f
+        val top = -fittedSize.height / 2f
 
         canvas.save()
         canvas.translate(cx + frame.offsetXPx, cy + frame.offsetYPx)
@@ -220,8 +237,8 @@ class MemoBitmapFrameRenderer(
             if (stroke.points.size < 2) return@forEach
             val path = Path()
             stroke.points.forEachIndexed { index, point ->
-                val x = left + point.x * width
-                val y = top + point.y * height
+                val x = left + point.x * fittedSize.width
+                val y = top + point.y * fittedSize.height
                 if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
 

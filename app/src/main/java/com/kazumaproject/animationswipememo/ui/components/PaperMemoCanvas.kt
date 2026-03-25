@@ -51,10 +51,12 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kazumaproject.animationswipememo.domain.animation.MemoAnimationEngine
+import com.kazumaproject.animationswipememo.domain.model.fitContentSize
 import com.kazumaproject.animationswipememo.domain.model.MemoBlock
 import com.kazumaproject.animationswipememo.domain.model.MemoBlockType
 import com.kazumaproject.animationswipememo.domain.model.MemoDraft
 import com.kazumaproject.animationswipememo.domain.model.MemoTextAlign
+import com.kazumaproject.animationswipememo.domain.model.resolvedContentAspectRatio
 import kotlin.math.roundToInt
 
 @Composable
@@ -226,6 +228,13 @@ private fun ImageBlockView(
     val offsetY = (block.normalizedY * canvasHeightPx - heightPx / 2f).roundToInt()
     val bitmap = rememberUriBitmap(block.imageUri)
     val glowAlpha = (frame.glowRadiusPx / 26f).coerceIn(0f, 0.4f)
+    val fittedSize = fitContentSize(
+        boxWidth = widthPx.toFloat(),
+        boxHeight = heightPx.toFloat(),
+        aspectRatio = block.resolvedContentAspectRatio()
+    )
+    val fittedWidthDp = with(density) { fittedSize.width.toDp() }
+    val fittedHeightDp = with(density) { fittedSize.height.toDp() }
 
     Box(
         modifier = blockGestureModifier(
@@ -260,14 +269,16 @@ private fun ImageBlockView(
                 bitmap = bitmap,
                 contentDescription = "Inserted image",
                 modifier = Modifier
-                    .fillMaxSize()
+                    .size(fittedWidthDp, fittedHeightDp)
+                    .align(Alignment.Center)
                     .clip(RoundedCornerShape(16.dp)),
-                contentScale = ContentScale.Crop
+                contentScale = ContentScale.Fit
             )
         } else {
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .size(fittedWidthDp, fittedHeightDp)
+                    .align(Alignment.Center)
                     .background(
                         MaterialTheme.colorScheme.surfaceVariant,
                         RoundedCornerShape(16.dp)
@@ -300,6 +311,13 @@ private fun DrawingBlockView(
     val offsetX = (block.normalizedX * canvasWidthPx - widthPx / 2f).roundToInt()
     val offsetY = (block.normalizedY * canvasHeightPx - heightPx / 2f).roundToInt()
     val glowAlpha = (frame.glowRadiusPx / 26f).coerceIn(0f, 0.28f)
+    val fittedSize = fitContentSize(
+        boxWidth = widthPx.toFloat(),
+        boxHeight = heightPx.toFloat(),
+        aspectRatio = block.resolvedContentAspectRatio()
+    )
+    val paddingX = (widthPx - fittedSize.width) / 2f
+    val paddingY = (heightPx - fittedSize.height) / 2f
 
     androidx.compose.foundation.Canvas(
         modifier = blockGestureModifier(
@@ -332,9 +350,15 @@ private fun DrawingBlockView(
         block.strokes.forEach { stroke ->
             if (stroke.points.size < 2) return@forEach
             val path = Path().apply {
-                moveTo(stroke.points.first().x * size.width, stroke.points.first().y * size.height)
+                moveTo(
+                    paddingX + (stroke.points.first().x * fittedSize.width),
+                    paddingY + (stroke.points.first().y * fittedSize.height)
+                )
                 stroke.points.drop(1).forEach { point ->
-                    lineTo(point.x * size.width, point.y * size.height)
+                    lineTo(
+                        paddingX + (point.x * fittedSize.width),
+                        paddingY + (point.y * fittedSize.height)
+                    )
                 }
             }
             drawPath(
@@ -388,7 +412,10 @@ private fun blockGestureModifier(
                 }
 
                 if (!dragStarted) {
-                    if (waitForUpOrCancellation() != null) {
+                    val up = waitForUpOrCancellation()
+                    if (up != null) {
+                        down.consume()
+                        up.consume()
                         onBlockTap(block.id)
                     }
                 } else if (postSlop != null) {
