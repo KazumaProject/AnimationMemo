@@ -4,15 +4,24 @@ import java.util.UUID
 
 data class MemoDraft(
     val id: String,
+    val title: String,
     val paperStyle: PaperStyle,
     val blocks: List<MemoBlock>,
     val createdAt: Long,
     val updatedAt: Long
 ) {
+    val displayTitle: String
+        get() = title.trim().ifBlank { "Untitled memo" }
+
     val searchableText: String
-        get() = blocks
-            .filter { it.type == MemoBlockType.Text }
-            .mapNotNull { it.text.trim().takeIf(String::isNotBlank) }
+        get() = listOfNotNull(
+            title.trim().takeIf(String::isNotBlank),
+            blocks
+                .filter { it.type == MemoBlockType.Text }
+                .mapNotNull { it.text.trim().takeIf(String::isNotBlank) }
+                .joinToString(" ")
+                .takeIf(String::isNotBlank)
+        )
             .joinToString(" ")
 
     val previewText: String
@@ -52,6 +61,7 @@ data class MemoDraft(
         ): MemoDraft {
             return MemoDraft(
                 id = UUID.randomUUID().toString(),
+                title = "",
                 paperStyle = paperStyle,
                 blocks = listOf(MemoBlock.createText(defaultAnimation = defaultAnimation)),
                 createdAt = timestamp,

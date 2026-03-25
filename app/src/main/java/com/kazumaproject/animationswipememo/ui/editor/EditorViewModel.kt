@@ -14,6 +14,7 @@ import com.kazumaproject.animationswipememo.domain.model.AnimationStyle
 import com.kazumaproject.animationswipememo.domain.model.MemoBlock
 import com.kazumaproject.animationswipememo.domain.model.MemoDraft
 import com.kazumaproject.animationswipememo.domain.model.MemoFontFamily
+import com.kazumaproject.animationswipememo.domain.model.PaperStyle
 import com.kazumaproject.animationswipememo.domain.model.SavedDrawing
 import com.kazumaproject.animationswipememo.domain.model.StrokeData
 import com.kazumaproject.animationswipememo.domain.model.TextStyleSetting
@@ -106,11 +107,22 @@ class EditorViewModel(
 
     init {
         viewModelScope.launch {
+            settingsRepository.settings.collect { settings ->
+                val draft = draftState.value ?: return@collect
+                if (!existingMemoState.value && draft.paperStyle != settings.defaultPaperStyle) {
+                    draftState.value = draft.copy(paperStyle = settings.defaultPaperStyle)
+                }
+            }
+        }
+        viewModelScope.launch {
             val settings = settingsRepository.settings.first()
             val loadedMemo = memoId?.let { memoRepository.getMemoById(it) }
-            val draft = loadedMemo ?: MemoDraft.create(defaultAnimation = settings.defaultAnimation)
-            draftState.value = draft
+            val draft = loadedMemo ?: MemoDraft.create(
+                defaultAnimation = settings.defaultAnimation,
+                paperStyle = settings.defaultPaperStyle
+            )
             existingMemoState.value = loadedMemo != null
+            draftState.value = draft
             selectedBlockIdState.value = draft.blocks.firstOrNull()?.id
             editorSheetVisibleState.value = loadedMemo == null
             loadingState.value = false
@@ -261,6 +273,18 @@ class EditorViewModel(
         }
     }
 
+    fun updateMemoTitle(title: String) {
+        val draft = draftState.value ?: return
+        val sanitizedTitle = title
+            .replace('\n', ' ')
+            .trimStart()
+            .take(60)
+        draftState.value = draft.copy(
+            title = sanitizedTitle,
+            updatedAt = System.currentTimeMillis()
+        )
+    }
+
     fun updateSelectedBlockAnimation(style: AnimationStyle) {
         updateSelectedBlock { block ->
             block.copy(animationStyle = style)
@@ -378,7 +402,10 @@ class EditorViewModel(
             if (existingMemoState.value) {
                 memoRepository.deleteMemo(draft.id)
             }
-            val freshDraft = MemoDraft.create(defaultAnimation = uiState.value.settings.defaultAnimation)
+            val freshDraft = MemoDraft.create(
+                defaultAnimation = uiState.value.settings.defaultAnimation,
+                paperStyle = uiState.value.settings.defaultPaperStyle
+            )
             draftState.value = freshDraft
             existingMemoState.value = false
             selectedBlockIdState.value = freshDraft.blocks.firstOrNull()?.id
@@ -391,7 +418,10 @@ class EditorViewModel(
     }
 
     fun createNewMemo() {
-        val freshDraft = MemoDraft.create(defaultAnimation = uiState.value.settings.defaultAnimation)
+        val freshDraft = MemoDraft.create(
+            defaultAnimation = uiState.value.settings.defaultAnimation,
+            paperStyle = uiState.value.settings.defaultPaperStyle
+        )
         draftState.value = freshDraft
         existingMemoState.value = false
         selectedBlockIdState.value = freshDraft.blocks.firstOrNull()?.id

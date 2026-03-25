@@ -1,12 +1,12 @@
 package com.kazumaproject.animationswipememo.ui.list
 
 import android.content.Context
-import android.graphics.BitmapFactory
 import android.net.Uri
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,8 +24,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -33,10 +38,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,8 +59,10 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
@@ -65,10 +76,12 @@ import com.kazumaproject.animationswipememo.domain.model.MemoBlockType
 import com.kazumaproject.animationswipememo.domain.model.MemoDraft
 import com.kazumaproject.animationswipememo.domain.model.fitContentSize
 import com.kazumaproject.animationswipememo.domain.model.resolvedContentAspectRatio
+import com.kazumaproject.animationswipememo.platform.decodeSampledBitmap
 import com.kazumaproject.animationswipememo.platform.composeFontStyle
 import com.kazumaproject.animationswipememo.platform.composeFontWeight
 import com.kazumaproject.animationswipememo.platform.composeTextDecoration
 import com.kazumaproject.animationswipememo.platform.toComposeFontFamily
+import com.kazumaproject.animationswipememo.ui.components.drawPaperDecorations
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -82,6 +95,59 @@ fun MemoListScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val clipboardManager = LocalClipboardManager.current
+    var pendingDeleteMemo by remember { mutableStateOf<MemoDraft?>(null) }
+    var showDeleteAllDialog by rememberSaveable { mutableStateOf(false) }
+
+    if (pendingDeleteMemo != null) {
+        AlertDialog(
+            onDismissRequest = { pendingDeleteMemo = null },
+            title = { Text("Delete memo?") },
+            text = {
+                Text("This removes \"${pendingDeleteMemo?.displayTitle}\" from Saved memos.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingDeleteMemo?.id?.let(viewModel::deleteMemo)
+                        pendingDeleteMemo = null
+                    }
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeleteMemo = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (showDeleteAllDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteAllDialog = false },
+            title = { Text("Delete all memos?") },
+            text = {
+                Text("This action removes every saved memo and cannot be undone.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteAllMemos()
+                        showDeleteAllDialog = false
+                    }
+                ) {
+                    Text("Delete all")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteAllDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -90,7 +156,7 @@ fun MemoListScreen(
                     Column {
                         Text("Saved memos")
                         Text(
-                            text = "Search across text blocks and continue editing any memo.",
+                            text = "Search across titles and text blocks, then continue editing any memo.",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -101,6 +167,17 @@ fun MemoListScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
                             contentDescription = "Back"
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = { showDeleteAllDialog = true },
+                        enabled = uiState.hasAnyMemos
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.DeleteSweep,
+                            contentDescription = "Delete all memos"
                         )
                     }
                 }
@@ -118,8 +195,8 @@ fun MemoListScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 12.dp),
-                label = { Text("Search text blocks") },
-                placeholder = { Text("Find memos by words inside text blocks") },
+                label = { Text("Search memos") },
+                placeholder = { Text("Find memos by title or text") },
                 singleLine = true
             )
 
@@ -148,7 +225,13 @@ fun MemoListScreen(
                             MemoListItem(
                                 memo = memo,
                                 darkTheme = isDarkTheme,
-                                onClick = { onMemoClick(memo.id) }
+                                onClick = { onMemoClick(memo.id) },
+                                onCopy = {
+                                    clipboardManager.setText(AnnotatedString(memo.copyableContent()))
+                                },
+                                onDelete = {
+                                    pendingDeleteMemo = memo
+                                }
                             )
                         }
                     }
@@ -181,60 +264,104 @@ private fun EmptyState(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MemoListItem(
     memo: MemoDraft,
     darkTheme: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onCopy: () -> Unit,
+    onDelete: () -> Unit
 ) {
     val formatter = remember { SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()) }
     val paper = memo.paperStyle.palette(darkTheme)
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = Color(paper.paperArgb)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-        shape = RoundedCornerShape(24.dp)
-    ) {
-        Row(
+    var isMenuExpanded by remember { mutableStateOf(false) }
+    Box {
+        Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = { isMenuExpanded = true }
+                ),
+            colors = CardDefaults.cardColors(containerColor = Color(paper.paperArgb)),
+            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+            shape = RoundedCornerShape(24.dp)
         ) {
-            MemoThumbnail(
-                memo = memo,
-                darkTheme = darkTheme,
+            Row(
                 modifier = Modifier
-                    .width(112.dp)
-                    .height(148.dp)
-            )
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = memo.displayPreviewText,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    color = Color(memo.blocks.firstOrNull()?.textStyle?.resolvedTextColor(darkTheme)
-                        ?: if (darkTheme) 0xFFF7F0E2.toInt() else 0xFF2D241C.toInt())
+                MemoThumbnail(
+                    memo = memo,
+                    darkTheme = darkTheme,
+                    modifier = Modifier
+                        .width(112.dp)
+                        .height(148.dp)
                 )
-                Text(
-                    text = memo.summaryLabel,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "Updated ${formatter.format(Date(memo.updatedAt))}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = memo.displayTitle,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = Color(
+                            memo.blocks.firstOrNull()?.textStyle?.resolvedTextColor(darkTheme)
+                                ?: if (darkTheme) 0xFFF7F0E2.toInt() else 0xFF2D241C.toInt()
+                        )
+                    )
+                    Text(
+                        text = memo.displayPreviewText,
+                        style = MaterialTheme.typography.bodyLarge,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = memo.summaryLabel,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "Updated ${formatter.format(Date(memo.updatedAt))}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
+        }
+
+        DropdownMenu(
+            expanded = isMenuExpanded,
+            onDismissRequest = { isMenuExpanded = false }
+        ) {
+            DropdownMenuItem(
+                text = { Text("Copy") },
+                leadingIcon = {
+                    Icon(Icons.Outlined.ContentCopy, contentDescription = null)
+                },
+                onClick = {
+                    onCopy()
+                    isMenuExpanded = false
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("Delete") },
+                leadingIcon = {
+                    Icon(Icons.Outlined.DeleteSweep, contentDescription = null)
+                },
+                onClick = {
+                    onDelete()
+                    isMenuExpanded = false
+                }
+            )
         }
     }
 }
@@ -251,23 +378,12 @@ private fun MemoThumbnail(
             .clip(RoundedCornerShape(20.dp))
             .background(Color(paper.paperArgb))
             .drawBehind {
-                val lineColor = Color(paper.lineArgb)
-                val edgeColor = Color(paper.edgeArgb)
-                drawRoundRect(
-                    color = edgeColor,
-                    cornerRadius = CornerRadius(20.dp.toPx()),
-                    style = Stroke(width = 1.4.dp.toPx())
+                drawPaperDecorations(
+                    paperStyle = memo.paperStyle,
+                    palette = paper,
+                    cornerRadius = 20.dp,
+                    borderWidth = 1.4.dp
                 )
-                var y = size.height * 0.18f
-                while (y < size.height * 0.94f) {
-                    drawLine(
-                        color = lineColor,
-                        start = Offset(size.width * 0.08f, y),
-                        end = Offset(size.width * 0.92f, y),
-                        strokeWidth = 1.dp.toPx()
-                    )
-                    y += size.height * 0.11f
-                }
             }
     ) {
         memo.blocks.take(5).forEach { block ->
@@ -322,13 +438,18 @@ private fun ThumbnailTextBlock(
 
 @Composable
 private fun ThumbnailImageBlock(block: MemoBlock) {
-    val bitmap = rememberUriBitmap(block.imageUri)
     val boxWidth = 112f * block.widthFraction
     val boxHeight = 148f * block.heightFraction
     val fitted = fitContentSize(
         boxWidth = boxWidth,
         boxHeight = boxHeight,
         aspectRatio = block.resolvedContentAspectRatio()
+    )
+    val density = LocalDensity.current
+    val bitmap = rememberUriBitmap(
+        imageUri = block.imageUri,
+        targetWidthPx = with(density) { fitted.width.dp.roundToPx().coerceAtLeast(1) },
+        targetHeightPx = with(density) { fitted.height.dp.roundToPx().coerceAtLeast(1) }
     )
     Box(
         modifier = Modifier.fillMaxSize()
@@ -386,15 +507,40 @@ private fun ThumbnailDrawingBlock(block: MemoBlock) {
 }
 
 @Composable
-private fun rememberUriBitmap(imageUri: String?): androidx.compose.ui.graphics.ImageBitmap? {
+private fun rememberUriBitmap(
+    imageUri: String?,
+    targetWidthPx: Int,
+    targetHeightPx: Int
+): androidx.compose.ui.graphics.ImageBitmap? {
     val context = LocalContext.current
-    return remember(context, imageUri) {
+    return remember(context, imageUri, targetWidthPx, targetHeightPx) {
         imageUri?.let { uri ->
             runCatching {
-                context.contentResolver.openInputStream(Uri.parse(uri)).use { input ->
-                    BitmapFactory.decodeStream(input)?.asImageBitmap()
-                }
+                context.decodeSampledBitmap(
+                    uri = Uri.parse(uri),
+                    maxWidth = targetWidthPx,
+                    maxHeight = targetHeightPx
+                )?.asImageBitmap()
             }.getOrNull()
         }
     }
+}
+
+private fun MemoDraft.copyableContent(): String {
+    val body = blocks
+        .filter { it.type == MemoBlockType.Text }
+        .mapNotNull { it.text.trim().takeIf(String::isNotBlank) }
+        .joinToString("\n")
+
+    return buildString {
+        title.trim().takeIf(String::isNotBlank)?.let { appendLine(it) }
+        if (isNotEmpty() && body.isNotBlank()) {
+            appendLine()
+        }
+        if (body.isNotBlank()) {
+            append(body)
+        } else if (isEmpty()) {
+            append(summaryLabel)
+        }
+    }.trim()
 }

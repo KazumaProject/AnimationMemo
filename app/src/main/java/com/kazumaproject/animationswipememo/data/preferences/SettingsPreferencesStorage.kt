@@ -9,6 +9,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.kazumaproject.animationswipememo.domain.model.AnimationStyle
 import com.kazumaproject.animationswipememo.domain.model.AppSettings
 import com.kazumaproject.animationswipememo.domain.model.GifQuality
+import com.kazumaproject.animationswipememo.domain.model.PaperStyle
 import com.kazumaproject.animationswipememo.domain.model.ThemeMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -44,6 +45,12 @@ class SettingsPreferencesStorage(private val context: Context) {
         }
     }
 
+    suspend fun updateDefaultPaperStyle(paperStyle: PaperStyle) {
+        context.dataStore.edit { preferences ->
+            preferences[Keys.DEFAULT_PAPER_STYLE] = paperStyle.name
+        }
+    }
+
     private fun Preferences.toAppSettings(): AppSettings {
         return AppSettings(
             defaultAnimation = enumValueOfOrDefault(
@@ -58,7 +65,8 @@ class SettingsPreferencesStorage(private val context: Context) {
                 this[Keys.THEME_MODE],
                 ThemeMode.System
             ),
-            editorSheetOpacity = this[Keys.EDITOR_SHEET_OPACITY] ?: 0.88f
+            editorSheetOpacity = this[Keys.EDITOR_SHEET_OPACITY] ?: 0.88f,
+            defaultPaperStyle = PaperStyle.fromName(this[Keys.DEFAULT_PAPER_STYLE])
         )
     }
 
@@ -76,5 +84,6 @@ class SettingsPreferencesStorage(private val context: Context) {
         val GIF_QUALITY = stringPreferencesKey("gif_quality")
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val EDITOR_SHEET_OPACITY = floatPreferencesKey("editor_sheet_opacity")
+        val DEFAULT_PAPER_STYLE = stringPreferencesKey("default_paper_style")
     }
 }

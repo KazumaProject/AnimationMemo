@@ -4,6 +4,7 @@ import com.kazumaproject.animationswipememo.data.preferences.SettingsPreferences
 import com.kazumaproject.animationswipememo.domain.model.AnimationStyle
 import com.kazumaproject.animationswipememo.domain.model.AppSettings
 import com.kazumaproject.animationswipememo.domain.model.GifQuality
+import com.kazumaproject.animationswipememo.domain.model.PaperStyle
 import com.kazumaproject.animationswipememo.domain.model.ThemeMode
 import com.kazumaproject.animationswipememo.domain.repository.SettingsRepository
 import kotlinx.coroutines.flow.Flow
@@ -27,6 +28,10 @@ class DefaultSettingsRepository(
 
     override suspend fun updateEditorSheetOpacity(opacity: Float) {
         storage.updateEditorSheetOpacity(opacity)
+    }
+
+    override suspend fun updateDefaultPaperStyle(paperStyle: PaperStyle) {
+        storage.updateDefaultPaperStyle(paperStyle)
     }
 
     override fun currentValue(): AppSettings = AppSettings()

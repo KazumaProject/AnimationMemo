@@ -17,7 +17,8 @@ import org.json.JSONObject
 fun MemoEntity.toDomain(): MemoDraft {
     return MemoDraft(
         id = id,
-        paperStyle = PaperStyle.valueOf(paperStyle),
+        title = title,
+        paperStyle = PaperStyle.fromName(paperStyle),
         blocks = decodeBlocks(blocksJson),
         createdAt = createdAt,
         updatedAt = updatedAt
@@ -27,6 +28,7 @@ fun MemoEntity.toDomain(): MemoDraft {
 fun MemoDraft.toEntity(): MemoEntity {
     return MemoEntity(
         id = id,
+        title = title,
         paperStyle = paperStyle.name,
         blocksJson = encodeBlocks(blocks),
         createdAt = createdAt,

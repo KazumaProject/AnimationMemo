@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kazumaproject.animationswipememo.domain.model.AnimationStyle
 import com.kazumaproject.animationswipememo.domain.model.GifQuality
+import com.kazumaproject.animationswipememo.domain.model.PaperStyle
 import com.kazumaproject.animationswipememo.domain.model.ThemeMode
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -101,6 +102,20 @@ fun SettingsScreen(
                     ThemeMode.entries.firstOrNull { it.displayName == label }
                         ?.let(viewModel::updateThemeMode)
                 }
+            )
+            SelectionDropdownRow(
+                label = "Default memo background",
+                selectedLabel = uiState.defaultPaperStyle.displayName,
+                options = PaperStyle.entries.map { it.displayName },
+                onSelectLabel = { label ->
+                    PaperStyle.entries.firstOrNull { it.displayName == label }
+                        ?.let(viewModel::updateDefaultPaperStyle)
+                }
+            )
+            Text(
+                text = "New memos start with this paper design. Existing memos keep their saved background.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             Text(

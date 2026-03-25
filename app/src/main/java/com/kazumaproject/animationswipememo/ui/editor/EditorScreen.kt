@@ -12,6 +12,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
@@ -25,6 +26,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.automirrored.outlined.NoteAdd
@@ -38,6 +41,7 @@ import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -58,7 +62,10 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -93,6 +100,8 @@ fun EditorScreen(
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
+    var isTitleDialogVisible by rememberSaveable { mutableStateOf(false) }
+    var pendingTitle by rememberSaveable { mutableStateOf("") }
     val systemDark = isSystemInDarkTheme()
     val isDarkTheme = when (uiState.settings.themeMode) {
         ThemeMode.System -> systemDark
@@ -132,6 +141,38 @@ fun EditorScreen(
     fun dismissTransientInput() {
         focusManager.clearFocus(force = true)
         keyboardController?.hide()
+    }
+
+    if (isTitleDialogVisible && uiState.draft != null) {
+        AlertDialog(
+            onDismissRequest = { isTitleDialogVisible = false },
+            title = { Text("Memo title") },
+            text = {
+                OutlinedTextField(
+                    value = pendingTitle,
+                    onValueChange = { pendingTitle = it.take(60) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Title") },
+                    placeholder = { Text("Untitled memo") },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.updateMemoTitle(pendingTitle)
+                        isTitleDialogVisible = false
+                    }
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { isTitleDialogVisible = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     if (uiState.isEditorSheetVisible && uiState.selectedBlock != null) {
@@ -200,7 +241,22 @@ fun EditorScreen(
             topBar = {
                 TopAppBar(
                     title = {
-                        Text(if (uiState.isExistingMemo) "Memo" else "New memo")
+                        Column(
+                            modifier = Modifier.clickable(enabled = uiState.draft != null) {
+                                pendingTitle = uiState.draft?.title.orEmpty()
+                                isTitleDialogVisible = true
+                            }
+                        ) {
+                            Text(
+                                uiState.draft?.displayTitle
+                                    ?: if (uiState.isExistingMemo) "Memo" else "New memo"
+                            )
+                            Text(
+                                text = "Tap to rename",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     },
                     navigationIcon = {
                         IconButton(onClick = onOpenList) {
@@ -395,9 +451,11 @@ private fun BlockEditorSheet(
 ) {
     val block = uiState.selectedBlock ?: return
     val animationChoices = AnimationStyle.availableFor(block.type)
+    val scrollState = rememberScrollState()
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .verticalScroll(scrollState)
             .padding(horizontal = 20.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -488,29 +546,37 @@ private fun BlockEditorSheet(
                     valueRange = TextStyleSetting.MIN_FONT_SIZE..TextStyleSetting.MAX_FONT_SIZE
                 )
             }
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "Width: ${(block.widthFraction * 100f).toInt()}%",
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Slider(
-                    value = block.widthFraction,
-                    onValueChange = onWidthChange,
-                    valueRange = 0.12f..0.9f
-                )
-            }
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "Height: ${(block.heightFraction * 100f).toInt()}%",
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Slider(
-                    value = block.heightFraction,
-                    onValueChange = onHeightChange,
-                    valueRange = 0.12f..0.9f
-                )
-            }
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = if (block.type == MemoBlockType.Text) {
+                    "Text area width: ${(block.widthFraction * 100f).toInt()}%"
+                } else {
+                    "Width: ${(block.widthFraction * 100f).toInt()}%"
+                },
+                style = MaterialTheme.typography.titleMedium
+            )
+            Slider(
+                value = block.widthFraction,
+                onValueChange = onWidthChange,
+                valueRange = 0.12f..0.9f
+            )
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = if (block.type == MemoBlockType.Text) {
+                    "Text area height: ${(block.heightFraction * 100f).toInt()}%"
+                } else {
+                    "Height: ${(block.heightFraction * 100f).toInt()}%"
+                },
+                style = MaterialTheme.typography.titleMedium
+            )
+            Slider(
+                value = block.heightFraction,
+                onValueChange = onHeightChange,
+                valueRange = 0.12f..0.9f
+            )
         }
 
         Row(

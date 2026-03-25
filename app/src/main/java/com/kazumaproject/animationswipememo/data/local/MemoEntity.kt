@@ -6,6 +6,7 @@ import androidx.room.PrimaryKey
 @Entity(tableName = "memos")
 data class MemoEntity(
     @PrimaryKey val id: String,
+    val title: String,
     val paperStyle: String,
     val blocksJson: String,
     val createdAt: Long,

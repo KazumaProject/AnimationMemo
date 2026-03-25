@@ -28,4 +28,8 @@ class OfflineMemoRepository(
     override suspend fun deleteMemo(id: String) {
         memoDao.deleteMemo(id)
     }
+
+    override suspend fun deleteAllMemos() {
+        memoDao.deleteAllMemos()
+    }
 }

@@ -33,5 +33,6 @@ data class AppSettings(
     val defaultAnimation: AnimationStyle = AnimationStyle.Fade,
     val gifQuality: GifQuality = GifQuality.Standard,
     val themeMode: ThemeMode = ThemeMode.System,
-    val editorSheetOpacity: Float = 0.88f
+    val editorSheetOpacity: Float = 0.88f,
+    val defaultPaperStyle: PaperStyle = PaperStyle.WarmNote
 )

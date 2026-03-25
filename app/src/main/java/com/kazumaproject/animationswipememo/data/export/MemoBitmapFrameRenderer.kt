@@ -2,7 +2,6 @@ package com.kazumaproject.animationswipememo.data.export
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
@@ -18,10 +17,15 @@ import com.kazumaproject.animationswipememo.domain.model.fitContentSize
 import com.kazumaproject.animationswipememo.domain.model.MemoBlock
 import com.kazumaproject.animationswipememo.domain.model.MemoBlockType
 import com.kazumaproject.animationswipememo.domain.model.MemoDraft
+import com.kazumaproject.animationswipememo.domain.model.PaperPalette
+import com.kazumaproject.animationswipememo.domain.model.PaperPattern
+import com.kazumaproject.animationswipememo.domain.model.PaperStyle
 import com.kazumaproject.animationswipememo.domain.model.MemoTextAlign
 import com.kazumaproject.animationswipememo.domain.model.resolvedContentAspectRatio
+import com.kazumaproject.animationswipememo.platform.decodeSampledBitmap
 import com.kazumaproject.animationswipememo.platform.toStyledTypeface
 import kotlin.math.max
+import kotlin.math.roundToInt
 
 class MemoBitmapFrameRenderer(
     private val context: Context
@@ -57,45 +61,17 @@ class MemoBitmapFrameRenderer(
             style = Paint.Style.STROKE
             strokeWidth = width * 0.004f
         }
-        val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = paper.lineArgb
-            strokeWidth = max(1f, width * 0.0018f)
-        }
-        val tapePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = paper.accentArgb
-            alpha = 170
-        }
 
         canvas.drawRoundRect(shadowRect, radius, radius, shadowPaint)
         canvas.drawRoundRect(cardRect, radius, radius, paperPaint)
         canvas.drawRoundRect(cardRect, radius, radius, edgePaint)
-
-        val tapeWidth = cardRect.width() * 0.28f
-        val tapeHeight = cardRect.height() * 0.045f
-        canvas.drawRoundRect(
-            RectF(
-                cardRect.centerX() - tapeWidth / 2f,
-                cardRect.top + cardRect.height() * 0.015f,
-                cardRect.centerX() + tapeWidth / 2f,
-                cardRect.top + cardRect.height() * 0.015f + tapeHeight
-            ),
-            tapeHeight * 0.35f,
-            tapeHeight * 0.35f,
-            tapePaint
+        drawPaperDetails(
+            canvas = canvas,
+            cardRect = cardRect,
+            paperStyle = memo.paperStyle,
+            palette = paper,
+            width = width
         )
-
-        var y = cardRect.top + cardRect.height() * 0.16f
-        val lineSpacing = cardRect.height() * 0.085f
-        while (y < cardRect.bottom - cardRect.height() * 0.06f) {
-            canvas.drawLine(
-                cardRect.left + cardRect.width() * 0.08f,
-                y,
-                cardRect.right - cardRect.width() * 0.08f,
-                y,
-                linePaint
-            )
-            y += lineSpacing
-        }
 
         memo.blocks.forEach { block ->
             when (block.type) {
@@ -172,7 +148,6 @@ class MemoBitmapFrameRenderer(
         progress: Float
     ) {
         val imageUri = block.imageUri ?: return
-        val bitmap = loadBitmap(imageUri) ?: return
         val frame = MemoAnimationEngine.frameAt(block.animationStyle, "", progress)
         val boxWidth = cardRect.width() * block.widthFraction
         val boxHeight = cardRect.height() * block.heightFraction
@@ -181,6 +156,11 @@ class MemoBitmapFrameRenderer(
             boxHeight = boxHeight,
             aspectRatio = block.resolvedContentAspectRatio()
         )
+        val bitmap = loadBitmap(
+            imageUri = imageUri,
+            targetWidth = fittedSize.width.roundToInt().coerceAtLeast(1),
+            targetHeight = fittedSize.height.roundToInt().coerceAtLeast(1)
+        ) ?: return
         val cx = cardRect.left + block.normalizedX * cardRect.width()
         val cy = cardRect.top + block.normalizedY * cardRect.height()
         val dst = RectF(
@@ -274,13 +254,182 @@ class MemoBitmapFrameRenderer(
         canvas.restore()
     }
 
-    private fun loadBitmap(imageUri: String): Bitmap? {
-        return imageCache.getOrPut(imageUri) {
-            runCatching {
-                context.contentResolver.openInputStream(Uri.parse(imageUri)).use { input ->
-                    BitmapFactory.decodeStream(input)
-                }
-            }.getOrNull()
+    private fun loadBitmap(
+        imageUri: String,
+        targetWidth: Int,
+        targetHeight: Int
+    ): Bitmap? {
+        val cacheKey = "$imageUri#$targetWidth x $targetHeight"
+        return imageCache.getOrPut(cacheKey) {
+            context.decodeSampledBitmap(
+                uri = Uri.parse(imageUri),
+                maxWidth = targetWidth,
+                maxHeight = targetHeight
+            )
+        }
+    }
+
+    private fun drawPaperDetails(
+        canvas: Canvas,
+        cardRect: RectF,
+        paperStyle: PaperStyle,
+        palette: PaperPalette,
+        width: Int
+    ) {
+        val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = palette.lineArgb
+            strokeWidth = max(1f, width * 0.0018f)
+        }
+        val accentPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = palette.accentArgb
+            alpha = 170
+            strokeWidth = max(1f, width * 0.0022f)
+        }
+
+        if (paperStyle.showTape) {
+            val tapeWidth = cardRect.width() * 0.28f
+            val tapeHeight = cardRect.height() * 0.045f
+            canvas.drawRoundRect(
+                RectF(
+                    cardRect.centerX() - tapeWidth / 2f,
+                    cardRect.top + cardRect.height() * 0.015f,
+                    cardRect.centerX() + tapeWidth / 2f,
+                    cardRect.top + cardRect.height() * 0.015f + tapeHeight
+                ),
+                tapeHeight * 0.35f,
+                tapeHeight * 0.35f,
+                accentPaint
+            )
+        }
+
+        when (paperStyle.pattern) {
+            PaperPattern.Lined -> drawLinedPaper(canvas, cardRect, linePaint)
+            PaperPattern.Blank -> Unit
+            PaperPattern.Grid -> drawGridPaper(canvas, cardRect, linePaint, accentPaint)
+            PaperPattern.DotGrid -> drawDotGridPaper(canvas, cardRect, accentPaint, width)
+            PaperPattern.Margin -> drawMarginPaper(canvas, cardRect, linePaint, accentPaint)
+            PaperPattern.Music -> drawMusicPaper(canvas, cardRect, linePaint, accentPaint)
+        }
+    }
+
+    private fun drawLinedPaper(
+        canvas: Canvas,
+        cardRect: RectF,
+        linePaint: Paint
+    ) {
+        var y = cardRect.top + cardRect.height() * 0.16f
+        val lineSpacing = cardRect.height() * 0.085f
+        while (y < cardRect.bottom - cardRect.height() * 0.06f) {
+            canvas.drawLine(
+                cardRect.left + cardRect.width() * 0.08f,
+                y,
+                cardRect.right - cardRect.width() * 0.08f,
+                y,
+                linePaint
+            )
+            y += lineSpacing
+        }
+    }
+
+    private fun drawGridPaper(
+        canvas: Canvas,
+        cardRect: RectF,
+        linePaint: Paint,
+        accentPaint: Paint
+    ) {
+        val left = cardRect.left + cardRect.width() * 0.08f
+        val right = cardRect.right - cardRect.width() * 0.08f
+        val top = cardRect.top + cardRect.height() * 0.12f
+        val bottom = cardRect.bottom - cardRect.height() * 0.06f
+        val rowStep = cardRect.height() * 0.08f
+        val columnStep = cardRect.width() * 0.12f
+
+        var row = 0
+        var y = top
+        while (y <= bottom) {
+            canvas.drawLine(left, y, right, y, if (row % 4 == 0) accentPaint else linePaint)
+            row++
+            y += rowStep
+        }
+
+        var column = 0
+        var x = left
+        while (x <= right) {
+            canvas.drawLine(x, top, x, bottom, if (column % 4 == 0) accentPaint else linePaint)
+            column++
+            x += columnStep
+        }
+    }
+
+    private fun drawDotGridPaper(
+        canvas: Canvas,
+        cardRect: RectF,
+        accentPaint: Paint,
+        width: Int
+    ) {
+        val dotPaint = Paint(accentPaint).apply {
+            style = Paint.Style.FILL
+        }
+        val radius = max(1.6f, width * 0.0024f)
+        val left = cardRect.left + cardRect.width() * 0.1f
+        val right = cardRect.right - cardRect.width() * 0.1f
+        val top = cardRect.top + cardRect.height() * 0.16f
+        val bottom = cardRect.bottom - cardRect.height() * 0.08f
+        val rowStep = cardRect.height() * 0.08f
+        val columnStep = cardRect.width() * 0.11f
+        var y = top
+        while (y <= bottom) {
+            var x = left
+            while (x <= right) {
+                canvas.drawCircle(x, y, radius, dotPaint)
+                x += columnStep
+            }
+            y += rowStep
+        }
+    }
+
+    private fun drawMarginPaper(
+        canvas: Canvas,
+        cardRect: RectF,
+        linePaint: Paint,
+        accentPaint: Paint
+    ) {
+        drawLinedPaper(canvas, cardRect, linePaint)
+        val marginX = cardRect.left + cardRect.width() * 0.18f
+        canvas.drawLine(
+            marginX,
+            cardRect.top + cardRect.height() * 0.14f,
+            marginX,
+            cardRect.bottom - cardRect.height() * 0.06f,
+            accentPaint
+        )
+    }
+
+    private fun drawMusicPaper(
+        canvas: Canvas,
+        cardRect: RectF,
+        linePaint: Paint,
+        accentPaint: Paint
+    ) {
+        val left = cardRect.left + cardRect.width() * 0.08f
+        val right = cardRect.right - cardRect.width() * 0.08f
+        val top = cardRect.top + cardRect.height() * 0.18f
+        val staffGap = cardRect.height() * 0.06f
+        val lineGap = cardRect.height() * 0.022f
+        var staffTop = top
+        while (staffTop + (lineGap * 4f) < cardRect.bottom - cardRect.height() * 0.08f) {
+            repeat(5) { index ->
+                val y = staffTop + (lineGap * index)
+                canvas.drawLine(left, y, right, y, linePaint)
+            }
+            canvas.drawLine(
+                left + (cardRect.width() * 0.02f),
+                staffTop - lineGap * 0.3f,
+                left + (cardRect.width() * 0.02f),
+                staffTop + (lineGap * 4f) + (lineGap * 0.3f),
+                accentPaint
+            )
+            staffTop += staffGap + (lineGap * 4f)
         }
     }
 }

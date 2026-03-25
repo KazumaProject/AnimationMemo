@@ -9,6 +9,7 @@ import com.kazumaproject.animationswipememo.di.AppContainer
 import com.kazumaproject.animationswipememo.domain.model.AnimationStyle
 import com.kazumaproject.animationswipememo.domain.model.AppSettings
 import com.kazumaproject.animationswipememo.domain.model.GifQuality
+import com.kazumaproject.animationswipememo.domain.model.PaperStyle
 import com.kazumaproject.animationswipememo.domain.model.ThemeMode
 import com.kazumaproject.animationswipememo.domain.repository.SettingsRepository
 import kotlinx.coroutines.flow.SharingStarted
@@ -46,6 +47,12 @@ class SettingsViewModel(
     fun updateEditorSheetOpacity(opacity: Float) {
         viewModelScope.launch {
             settingsRepository.updateEditorSheetOpacity(opacity)
+        }
+    }
+
+    fun updateDefaultPaperStyle(paperStyle: PaperStyle) {
+        viewModelScope.launch {
+            settingsRepository.updateDefaultPaperStyle(paperStyle)
         }
     }
 

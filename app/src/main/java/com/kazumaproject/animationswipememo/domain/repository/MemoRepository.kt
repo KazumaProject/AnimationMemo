@@ -8,4 +8,5 @@ interface MemoRepository {
     suspend fun getMemoById(id: String): MemoDraft?
     suspend fun upsertMemo(memo: MemoDraft)
     suspend fun deleteMemo(id: String)
+    suspend fun deleteAllMemos()
 }

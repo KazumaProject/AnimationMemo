@@ -1,7 +1,6 @@
 package com.kazumaproject.animationswipememo.ui.components
 
 import android.content.Context
-import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -62,6 +61,7 @@ import com.kazumaproject.animationswipememo.domain.model.MemoBlockType
 import com.kazumaproject.animationswipememo.domain.model.MemoDraft
 import com.kazumaproject.animationswipememo.domain.model.MemoTextAlign
 import com.kazumaproject.animationswipememo.domain.model.resolvedContentAspectRatio
+import com.kazumaproject.animationswipememo.platform.decodeSampledBitmap
 import com.kazumaproject.animationswipememo.platform.composeFontStyle
 import com.kazumaproject.animationswipememo.platform.composeFontWeight
 import com.kazumaproject.animationswipememo.platform.composeTextDecoration
@@ -129,32 +129,12 @@ fun PaperMemoCanvas(
                 }
             }
             .drawBehind {
-                val lineColor = Color(paper.lineArgb)
-                val accentColor = Color(paper.accentArgb)
-                val edgeColor = Color(paper.edgeArgb)
-                drawRoundRect(
-                    color = edgeColor,
-                    cornerRadius = CornerRadius(28.dp.toPx()),
-                    style = Stroke(width = 2.dp.toPx())
+                drawPaperDecorations(
+                    paperStyle = memo.paperStyle,
+                    palette = paper,
+                    cornerRadius = 28.dp,
+                    borderWidth = 2.dp
                 )
-                val tapeWidth = size.width * 0.28f
-                val tapeHeight = size.height * 0.05f
-                drawRoundRect(
-                    color = accentColor.copy(alpha = 0.68f),
-                    topLeft = Offset((size.width - tapeWidth) / 2f, size.height * 0.018f),
-                    size = Size(tapeWidth, tapeHeight),
-                    cornerRadius = CornerRadius(18.dp.toPx())
-                )
-                var y = size.height * 0.18f
-                while (y < size.height * 0.94f) {
-                    drawLine(
-                        color = lineColor,
-                        start = Offset(size.width * 0.08f, y),
-                        end = Offset(size.width * 0.92f, y),
-                        strokeWidth = 1.3.dp.toPx()
-                    )
-                    y += size.height * 0.085f
-                }
             }
     ) {
         memo.blocks.forEach { block ->
@@ -269,12 +249,16 @@ private fun ImageBlockView(
     val heightDp = with(density) { heightPx.toDp() }
     val offsetX = (block.normalizedX * canvasWidthPx - widthPx / 2f).roundToInt()
     val offsetY = (block.normalizedY * canvasHeightPx - heightPx / 2f).roundToInt()
-    val bitmap = rememberUriBitmap(block.imageUri)
     val glowAlpha = (frame.glowRadiusPx / 26f).coerceIn(0f, 0.4f)
     val fittedSize = fitContentSize(
         boxWidth = widthPx.toFloat(),
         boxHeight = heightPx.toFloat(),
         aspectRatio = block.resolvedContentAspectRatio()
+    )
+    val bitmap = rememberUriBitmap(
+        imageUri = block.imageUri,
+        targetWidthPx = fittedSize.width.roundToInt().coerceAtLeast(1),
+        targetHeightPx = fittedSize.height.roundToInt().coerceAtLeast(1)
     )
     val fittedWidthDp = with(density) { fittedSize.width.toDp() }
     val fittedHeightDp = with(density) { fittedSize.height.toDp() }
@@ -538,21 +522,36 @@ private fun estimateTextBlockHeightPx(
 }
 
 @Composable
-private fun rememberUriBitmap(imageUri: String?): androidx.compose.ui.graphics.ImageBitmap? {
+private fun rememberUriBitmap(
+    imageUri: String?,
+    targetWidthPx: Int,
+    targetHeightPx: Int
+): androidx.compose.ui.graphics.ImageBitmap? {
     val context = LocalContext.current
-    return remember(context, imageUri) {
+    return remember(context, imageUri, targetWidthPx, targetHeightPx) {
         imageUri?.let { uri ->
             runCatching {
-                decodeImageBitmap(context, uri)
+                decodeImageBitmap(
+                    context = context,
+                    uri = uri,
+                    targetWidthPx = targetWidthPx,
+                    targetHeightPx = targetHeightPx
+                )
             }.getOrNull()
         }
     }
 }
 
-private fun decodeImageBitmap(context: Context, uri: String) =
-    context.contentResolver.openInputStream(Uri.parse(uri)).use { input ->
-        BitmapFactory.decodeStream(input)?.asImageBitmap()
-    }
+private fun decodeImageBitmap(
+    context: Context,
+    uri: String,
+    targetWidthPx: Int,
+    targetHeightPx: Int
+) = context.decodeSampledBitmap(
+    uri = Uri.parse(uri),
+    maxWidth = targetWidthPx,
+    maxHeight = targetHeightPx
+)?.asImageBitmap()
 
 private fun textStyleFor(
     block: MemoBlock,

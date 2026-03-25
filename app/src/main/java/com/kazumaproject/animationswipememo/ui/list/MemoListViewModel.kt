@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 data class MemoListUiState(
     val memos: List<MemoDraft> = emptyList(),
@@ -21,7 +22,7 @@ data class MemoListUiState(
 )
 
 class MemoListViewModel(
-    memoRepository: MemoRepository
+    private val memoRepository: MemoRepository
 ) : ViewModel() {
     private val searchQueryState = MutableStateFlow("")
 
@@ -51,6 +52,18 @@ class MemoListViewModel(
 
     fun updateSearchQuery(query: String) {
         searchQueryState.value = query.take(80)
+    }
+
+    fun deleteMemo(id: String) {
+        viewModelScope.launch {
+            memoRepository.deleteMemo(id)
+        }
+    }
+
+    fun deleteAllMemos() {
+        viewModelScope.launch {
+            memoRepository.deleteAllMemos()
+        }
     }
 
     companion object {
