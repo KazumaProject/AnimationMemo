@@ -1,5 +1,6 @@
 package com.kazumaproject.animationswipememo.ui.editor
 
+import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -50,7 +51,9 @@ class EditorViewModel(
     private val existingMemoState = MutableStateFlow(false)
     private val selectedBlockIdState = MutableStateFlow<String?>(null)
     private val editorSheetVisibleState = MutableStateFlow(false)
-    private val toolPaletteVisibleState = MutableStateFlow(true)
+    private val toolPaletteVisibleState = MutableStateFlow(false)
+    private val fabVisibleState = MutableStateFlow(true)
+    private val fabExpandedState = MutableStateFlow(true)
     private val drawingLibraryVisibleState = MutableStateFlow(false)
     private val drawingEditorVisibleState = MutableStateFlow(false)
     private val effects = MutableSharedFlow<EditorEffect>()
@@ -72,19 +75,33 @@ class EditorViewModel(
                     isEditorSheetVisible = isEditorSheetVisible
                 )
             },
-            toolPaletteVisibleState,
-            drawingLibraryVisibleState,
-            drawingEditorVisibleState
-        ) { partialA, isToolPaletteVisible, isDrawingLibraryVisible, isDrawingEditorVisible ->
+            combine(
+                toolPaletteVisibleState,
+                fabVisibleState,
+                fabExpandedState,
+                drawingLibraryVisibleState,
+                drawingEditorVisibleState
+            ) { isToolPaletteVisible, isFabVisible, isFabExpanded, isDrawingLibraryVisible, isDrawingEditorVisible ->
+                PartialEditorVisibility(
+                    isToolPaletteVisible = isToolPaletteVisible,
+                    isFabVisible = isFabVisible,
+                    isFabExpanded = isFabExpanded,
+                    isDrawingLibraryVisible = isDrawingLibraryVisible,
+                    isDrawingEditorVisible = isDrawingEditorVisible
+                )
+            }
+        ) { partialA, visibility ->
             PartialEditorUiStateB(
                 draft = partialA.draft,
                 settings = partialA.settings,
                 savedDrawings = partialA.savedDrawings,
                 selectedBlockId = partialA.selectedBlockId,
                 isEditorSheetVisible = partialA.isEditorSheetVisible,
-                isToolPaletteVisible = isToolPaletteVisible,
-                isDrawingLibraryVisible = isDrawingLibraryVisible,
-                isDrawingEditorVisible = isDrawingEditorVisible
+                isToolPaletteVisible = visibility.isToolPaletteVisible,
+                isFabVisible = visibility.isFabVisible,
+                isFabExpanded = visibility.isFabExpanded,
+                isDrawingLibraryVisible = visibility.isDrawingLibraryVisible,
+                isDrawingEditorVisible = visibility.isDrawingEditorVisible
             )
         },
         loadingState,
@@ -98,6 +115,8 @@ class EditorViewModel(
             selectedBlockId = partial.selectedBlockId,
             isEditorSheetVisible = partial.isEditorSheetVisible,
             isToolPaletteVisible = partial.isToolPaletteVisible,
+            isFabVisible = partial.isFabVisible,
+            isFabExpanded = partial.isFabExpanded,
             isDrawingLibraryVisible = partial.isDrawingLibraryVisible,
             isDrawingEditorVisible = partial.isDrawingEditorVisible,
             isLoading = isLoading,
@@ -129,6 +148,7 @@ class EditorViewModel(
             draftState.value = draft
             selectedBlockIdState.value = draft.blocks.firstOrNull()?.id
             editorSheetVisibleState.value = false
+            fabExpandedState.value = false
             loadingState.value = false
         }
     }
@@ -147,6 +167,7 @@ class EditorViewModel(
         )
         selectedBlockIdState.value = newBlock.id
         editorSheetVisibleState.value = true
+        toolPaletteVisibleState.value = false
     }
 
     fun addImageBlock(imageUri: String, contentAspectRatio: Float) {
@@ -162,6 +183,7 @@ class EditorViewModel(
         )
         selectedBlockIdState.value = newBlock.id
         editorSheetVisibleState.value = true
+        toolPaletteVisibleState.value = false
         drawingLibraryVisibleState.value = false
         drawingEditorVisibleState.value = false
     }
@@ -178,6 +200,7 @@ class EditorViewModel(
         )
         selectedBlockIdState.value = newBlock.id
         editorSheetVisibleState.value = true
+        toolPaletteVisibleState.value = false
     }
 
     fun selectBlock(blockId: String) {
@@ -187,6 +210,7 @@ class EditorViewModel(
     fun openBlockEditor(blockId: String) {
         selectedBlockIdState.value = blockId
         editorSheetVisibleState.value = true
+        toolPaletteVisibleState.value = false
     }
 
     fun startBlockDrag(blockId: String) {
@@ -199,27 +223,63 @@ class EditorViewModel(
     }
 
     fun toggleToolPaletteVisibility() {
-        toolPaletteVisibleState.value = !toolPaletteVisibleState.value
+        toggleFabVisibility()
+    }
+
+    fun toggleFabVisibility() {
+        fabVisibleState.value = !fabVisibleState.value
+        if (fabVisibleState.value) {
+            fabExpandedState.value = true
+        } else {
+            fabExpandedState.value = false
+        }
+    }
+
+    fun toggleFabExpansion() {
+        if (!fabVisibleState.value) {
+            fabVisibleState.value = true
+        }
+        fabExpandedState.value = !fabExpandedState.value
+    }
+
+    fun collapseFabActions() {
+        fabExpandedState.value = false
+    }
+
+    fun showToolPalette() {
+        toolPaletteVisibleState.value = true
+        fabExpandedState.value = false
+        editorSheetVisibleState.value = false
+        drawingLibraryVisibleState.value = false
+        drawingEditorVisibleState.value = false
+    }
+
+    fun hideToolPalette() {
+        toolPaletteVisibleState.value = false
     }
 
     fun openDrawingLibrary() {
         drawingLibraryVisibleState.value = true
         drawingEditorVisibleState.value = false
         editorSheetVisibleState.value = false
+        toolPaletteVisibleState.value = false
     }
 
     fun closeDrawingLibrary() {
         drawingLibraryVisibleState.value = false
+        fabExpandedState.value = false
     }
 
     fun openDrawingEditor() {
         drawingLibraryVisibleState.value = false
         drawingEditorVisibleState.value = true
         editorSheetVisibleState.value = false
+        toolPaletteVisibleState.value = false
     }
 
     fun closeDrawingEditor() {
         drawingEditorVisibleState.value = false
+        fabExpandedState.value = false
     }
 
     fun insertSavedDrawing(drawing: SavedDrawing) {
@@ -275,14 +335,44 @@ class EditorViewModel(
 
     fun showEditorSheet() {
         if (selectedBlockIdState.value == null) {
+            Log.d(EDITOR_VIEW_MODEL_TAG, "showEditorSheet: skipped because selectedBlockId is null")
             emitMessage("Select a block first.")
             return
         }
+        Log.d(
+            EDITOR_VIEW_MODEL_TAG,
+            "showEditorSheet: opening editor for blockId=${selectedBlockIdState.value}"
+        )
         editorSheetVisibleState.value = true
+        toolPaletteVisibleState.value = false
+        fabExpandedState.value = false
+    }
+
+    fun openEditorFromFab() {
+        Log.d(
+            EDITOR_VIEW_MODEL_TAG,
+            "openEditorFromFab: selectedBlockId=${selectedBlockIdState.value}, blockCount=${draftState.value?.blocks?.size ?: 0}"
+        )
+        val currentSelected = selectedBlockIdState.value
+        if (currentSelected != null) {
+            showEditorSheet()
+            return
+        }
+        val firstBlockId = draftState.value?.blocks?.firstOrNull()?.id
+        if (firstBlockId == null) {
+            Log.d(EDITOR_VIEW_MODEL_TAG, "openEditorFromFab: no blocks available, cannot open editor")
+            emitMessage("No block to edit. Add a block first.")
+            return
+        }
+        Log.d(EDITOR_VIEW_MODEL_TAG, "openEditorFromFab: fallback selecting first blockId=$firstBlockId")
+        selectedBlockIdState.value = firstBlockId
+        showEditorSheet()
     }
 
     fun hideEditorSheet() {
+        Log.d(EDITOR_VIEW_MODEL_TAG, "hideEditorSheet: hiding editor sheet")
         editorSheetVisibleState.value = false
+        fabExpandedState.value = false
     }
 
     fun updateSelectedBlockText(text: String) {
@@ -560,6 +650,8 @@ class EditorViewModel(
         existingMemoState.value = false
         selectedBlockIdState.value = freshDraft.blocks.firstOrNull()?.id
         editorSheetVisibleState.value = false
+        toolPaletteVisibleState.value = false
+        fabExpandedState.value = false
         drawingLibraryVisibleState.value = false
         drawingEditorVisibleState.value = false
     }
@@ -665,6 +757,7 @@ class EditorViewModel(
         )
         selectedBlockIdState.value = newBlock.id
         editorSheetVisibleState.value = true
+        toolPaletteVisibleState.value = false
         drawingLibraryVisibleState.value = false
         drawingEditorVisibleState.value = false
         effects.emit(EditorEffect.PerformHaptic)
@@ -749,6 +842,19 @@ private data class PartialEditorUiStateB(
     val selectedBlockId: String?,
     val isEditorSheetVisible: Boolean,
     val isToolPaletteVisible: Boolean,
+    val isFabVisible: Boolean,
+    val isFabExpanded: Boolean,
     val isDrawingLibraryVisible: Boolean,
     val isDrawingEditorVisible: Boolean
 )
+
+private data class PartialEditorVisibility(
+    val isToolPaletteVisible: Boolean,
+    val isFabVisible: Boolean,
+    val isFabExpanded: Boolean,
+    val isDrawingLibraryVisible: Boolean,
+    val isDrawingEditorVisible: Boolean
+)
+
+private const val EDITOR_VIEW_MODEL_TAG = "EditorViewModel"
+
