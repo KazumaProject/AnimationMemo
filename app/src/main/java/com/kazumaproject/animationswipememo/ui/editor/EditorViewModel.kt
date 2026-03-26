@@ -8,6 +8,8 @@ import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.kazumaproject.animationswipememo.data.network.LinkPreviewMetadata
+import com.kazumaproject.animationswipememo.data.network.LinkPreviewMetadataFetcher
 import com.kazumaproject.animationswipememo.di.AppContainer
 import com.kazumaproject.animationswipememo.domain.export.AnimationExporter
 import com.kazumaproject.animationswipememo.domain.export.ExportRequest
@@ -41,6 +43,8 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class EditorViewModel(
@@ -51,6 +55,7 @@ class EditorViewModel(
     private val savedDrawingRepository: SavedDrawingRepository
 ) : ViewModel() {
     private val listBlockEditorUseCase = ListBlockEditorUseCase()
+    private val linkPreviewMetadataFetcher = LinkPreviewMetadataFetcher()
     private val memoId: String? = savedStateHandle["memoId"]
     private val draftState = MutableStateFlow<MemoDraft?>(null)
     private val loadingState = MutableStateFlow(true)
@@ -64,7 +69,9 @@ class EditorViewModel(
     private val drawingLibraryVisibleState = MutableStateFlow(false)
     private val drawingEditorVisibleState = MutableStateFlow(false)
     private val codeFullscreenBlockIdState = MutableStateFlow<String?>(null)
+    private val linkMetadataLoadingBlockIdState = MutableStateFlow<String?>(null)
     private val effects = MutableSharedFlow<EditorEffect>()
+    private var linkMetadataFetchJob: Job? = null
 
     val uiState: StateFlow<EditorUiState> = combine(
         combine(
@@ -121,8 +128,9 @@ class EditorViewModel(
         },
         loadingState,
         workingState,
-        existingMemoState
-    ) { partial, isLoading, isWorking, isExisting ->
+        existingMemoState,
+        linkMetadataLoadingBlockIdState
+    ) { partial, isLoading, isWorking, isExisting, linkMetadataLoadingBlockId ->
         EditorUiState(
             draft = partial.draft,
             settings = partial.settings,
@@ -135,6 +143,7 @@ class EditorViewModel(
             isDrawingLibraryVisible = partial.isDrawingLibraryVisible,
             isDrawingEditorVisible = partial.isDrawingEditorVisible,
             codeFullscreenBlockId = partial.codeFullscreenBlockId,
+            linkMetadataLoadingBlockId = linkMetadataLoadingBlockId,
             isLoading = isLoading,
             isWorking = isWorking,
             isExistingMemo = isExisting
@@ -607,16 +616,114 @@ class EditorViewModel(
         imageUrl: String,
         faviconUrl: String
     ) {
+        val sanitizedUrl = url.take(400)
+        val sanitizedTitle = title.take(120)
+        val sanitizedDescription = description.take(300)
+        val sanitizedImageUrl = imageUrl.take(400)
+        val sanitizedFaviconUrl = faviconUrl.take(400)
+
+        var previousUrl = ""
+        var selectedBlockId: String? = null
         updateSelectedBlock { block ->
             val link = block.payload as? MemoBlockPayload.LinkCard ?: return@updateSelectedBlock block
+            previousUrl = link.url.trim()
+            selectedBlockId = block.id
             block.copy(
                 payload = link.copy(
-                    url = url.take(400),
-                    title = title.take(120),
-                    description = description.take(300),
-                    imageUrl = imageUrl.take(400),
-                    faviconUrl = faviconUrl.take(400)
+                    url = sanitizedUrl,
+                    title = sanitizedTitle,
+                    description = sanitizedDescription,
+                    imageUrl = sanitizedImageUrl,
+                    faviconUrl = sanitizedFaviconUrl
                 )
+            )
+        }
+
+        val blockId = selectedBlockId ?: return
+        val normalizedCurrentUrl = sanitizedUrl.trim()
+        val hasAnyMissingMetadata = sanitizedTitle.isBlank() ||
+            sanitizedDescription.isBlank() ||
+            sanitizedImageUrl.isBlank() ||
+            sanitizedFaviconUrl.isBlank()
+
+        if (normalizedCurrentUrl.isBlank()) {
+            cancelLinkMetadataFetch(clearForBlockId = blockId)
+            return
+        }
+
+        val urlChanged = normalizedCurrentUrl != previousUrl
+        if (urlChanged && hasAnyMissingMetadata) {
+            scheduleLinkMetadataFetch(
+                blockId = blockId,
+                rawUrl = normalizedCurrentUrl
+            )
+        } else {
+            cancelLinkMetadataFetch(clearForBlockId = blockId)
+        }
+    }
+
+    private fun scheduleLinkMetadataFetch(blockId: String, rawUrl: String) {
+        cancelLinkMetadataFetch()
+        var launchedJob: Job? = null
+        launchedJob = viewModelScope.launch {
+            linkMetadataLoadingBlockIdState.value = blockId
+            try {
+                delay(LINK_METADATA_FETCH_DEBOUNCE_MS)
+                val normalizedUrl = LinkPreviewMetadataFetcher.normalizeUrl(rawUrl) ?: return@launch
+                val metadata = linkPreviewMetadataFetcher.fetch(normalizedUrl) ?: return@launch
+                applyFetchedLinkMetadata(
+                    blockId = blockId,
+                    requestedUrl = normalizedUrl,
+                    metadata = metadata
+                )
+            } finally {
+                if (linkMetadataFetchJob == launchedJob) {
+                    linkMetadataLoadingBlockIdState.value = null
+                }
+            }
+        }
+        linkMetadataFetchJob = launchedJob
+    }
+
+    private fun cancelLinkMetadataFetch(clearForBlockId: String? = null) {
+        linkMetadataFetchJob?.cancel()
+        linkMetadataFetchJob = null
+        if (clearForBlockId == null || linkMetadataLoadingBlockIdState.value == clearForBlockId) {
+            linkMetadataLoadingBlockIdState.value = null
+        }
+    }
+
+    private fun applyFetchedLinkMetadata(
+        blockId: String,
+        requestedUrl: String,
+        metadata: LinkPreviewMetadata
+    ) {
+        val draft = draftState.value ?: return
+        val nextBlocks = draft.blocks.map { block ->
+            if (block.id != blockId || block.type != MemoBlockType.LinkCard) {
+                block
+            } else {
+                val payload = block.payload as? MemoBlockPayload.LinkCard ?: return@map block
+                val activeUrl = LinkPreviewMetadataFetcher.normalizeUrl(payload.url) ?: payload.url.trim()
+                if (!activeUrl.equals(requestedUrl, ignoreCase = true)) {
+                    return@map block
+                }
+
+                payload.copy(
+                    title = payload.title.ifBlank { metadata.title.take(120) },
+                    description = payload.description.ifBlank { metadata.description.take(300) },
+                    imageUrl = payload.imageUrl.ifBlank { metadata.imageUrl.take(400) },
+                    faviconUrl = payload.faviconUrl.ifBlank { metadata.faviconUrl.take(400) }
+                ).let { updatedPayload ->
+                    if (updatedPayload == payload) block else block.copy(payload = updatedPayload)
+                }
+            }
+        }
+
+        if (nextBlocks != draft.blocks) {
+            draftState.value = draft.copy(
+                blocks = nextBlocks,
+                updatedAt = System.currentTimeMillis()
             )
         }
     }
@@ -1096,6 +1203,11 @@ class EditorViewModel(
         }
     }
 
+    override fun onCleared() {
+        cancelLinkMetadataFetch()
+        super.onCleared()
+    }
+
     private fun minimumBlockYFor(paperStyle: PaperStyle): Float {
         return if (paperStyle.supportsTopAlignedBlocks) 0.02f else 0.14f
     }
@@ -1200,6 +1312,7 @@ private fun MemoBlock.scaledBy(
 
 private const val MIN_BLOCK_FRACTION = 0.12f
 private const val MAX_BLOCK_FRACTION = 0.9f
+private const val LINK_METADATA_FETCH_DEBOUNCE_MS = 600L
 
 private data class PartialEditorUiStateA(
     val draft: MemoDraft?,

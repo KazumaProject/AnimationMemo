@@ -12,6 +12,7 @@ import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -64,6 +65,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.kazumaproject.animationswipememo.domain.animation.MemoAnimationEngine
 import com.kazumaproject.animationswipememo.domain.model.MemoBlock
 import com.kazumaproject.animationswipememo.domain.model.MemoBlockPayload
@@ -100,7 +102,8 @@ fun PaperMemoCanvas(
     onToggleListItemChecked: (String, String) -> Unit,
     onToggleListItemExpanded: (String, String) -> Unit,
     onToggleBlockExpanded: (String) -> Unit,
-    onCodeBlockLongPress: (String) -> Unit
+    onCodeBlockLongPress: (String) -> Unit,
+    onLinkCardLongPress: (String) -> Unit
 ) {
     val density = LocalDensity.current
     val paper = memo.paperStyle.palette(darkTheme)
@@ -258,7 +261,8 @@ fun PaperMemoCanvas(
                     onBlockDragStart = onBlockDragStart,
                     onBlockDrag = onBlockDrag,
                     onBlockScale = onBlockScale,
-                    onCodeBlockLongPress = onCodeBlockLongPress
+                    onCodeBlockLongPress = onCodeBlockLongPress,
+                    onLinkCardLongPress = onLinkCardLongPress
                 )
 
                 MemoBlockType.Toggle -> ToggleBlockView(
@@ -661,8 +665,11 @@ private fun PayloadTextBlockView(
     onBlockDragStart: (String) -> Unit,
     onBlockDrag: (String, Float, Float) -> Unit,
     onBlockScale: (String, Float) -> Unit,
-    onCodeBlockLongPress: (String) -> Unit
+    onCodeBlockLongPress: (String) -> Unit,
+    onLinkCardLongPress: (String) -> Unit
 ) {
+    val linkPayload = block.payload as? MemoBlockPayload.LinkCard
+    val latexPayload = block.payload as? MemoBlockPayload.Latex
     val payloadText = when (val payload = block.payload) {
         is MemoBlockPayload.Heading -> payload.text.ifBlank { "Heading" }
         is MemoBlockPayload.Quote -> payload.text.ifBlank { "Quote" }
@@ -706,13 +713,15 @@ private fun PayloadTextBlockView(
         onBlockScale = onBlockScale,
         onLongPress = if (block.type == MemoBlockType.Code) {
             { onCodeBlockLongPress(block.id) }
+        } else if (linkPayload?.url?.isNotBlank() == true) {
+            { onLinkCardLongPress(linkPayload.url) }
         } else {
             null
         },
         content = {
-            if (block.payload is MemoBlockPayload.Latex) {
+            if (latexPayload != null) {
                 KatexBlockView(
-                    expression = (block.payload as MemoBlockPayload.Latex).expression.ifBlank { "x^2" },
+                    expression = latexPayload.expression.ifBlank { "x^2" },
                     darkTheme = darkTheme,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -720,6 +729,12 @@ private fun PayloadTextBlockView(
                 QuotePayloadText(
                     text = renderedText,
                     textStyle = textStyle
+                )
+            } else if (linkPayload != null) {
+                LinkCardPayloadText(
+                    text = renderedText,
+                    textStyle = textStyle,
+                    faviconUrl = linkPayload.faviconUrl
                 )
             } else {
                 Text(
@@ -732,6 +747,38 @@ private fun PayloadTextBlockView(
             }
         }
     )
+}
+
+@Composable
+private fun LinkCardPayloadText(
+    text: AnnotatedString,
+    textStyle: TextStyle,
+    faviconUrl: String
+) {
+    val validFaviconUrl = faviconUrl.trim().takeIf { it.isHttpNetworkUrl() }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (validFaviconUrl != null) {
+            AsyncImage(
+                model = validFaviconUrl,
+                contentDescription = "Favicon",
+                modifier = Modifier
+                    .size(16.dp)
+                    .clip(RoundedCornerShape(3.dp)),
+                contentScale = ContentScale.Crop
+            )
+            Spacer(modifier = Modifier.size(6.dp))
+        }
+        Text(
+            text = text,
+            modifier = Modifier.fillMaxWidth(),
+            style = textStyle,
+            maxLines = 4,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+        )
+    }
 }
 
 @Composable
@@ -1294,5 +1341,11 @@ private fun textStyleFor(
 }
 
 private const val CODE_BLOCK_LONG_PRESS_TIMEOUT_MS = 450L
+
+private fun String.isHttpNetworkUrl(): Boolean {
+    val parsed = runCatching { Uri.parse(this) }.getOrNull() ?: return false
+    val scheme = parsed.scheme?.lowercase() ?: return false
+    return (scheme == "http" || scheme == "https") && !parsed.host.isNullOrBlank()
+}
 private const val PAPER_MEMO_CANVAS_TAG = "PaperMemoCanvas"
 

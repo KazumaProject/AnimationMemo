@@ -4,6 +4,7 @@ import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.LinearEasing
@@ -103,6 +104,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.kazumaproject.animationswipememo.data.network.LinkPreviewMetadataFetcher
 import com.kazumaproject.animationswipememo.domain.model.AnimationStyle
 import com.kazumaproject.animationswipememo.domain.model.ConversationRole
 import com.kazumaproject.animationswipememo.domain.model.HeadingLevel
@@ -517,6 +519,13 @@ fun EditorScreen(
                     onCodeBlockLongPress = { blockId ->
                         dismissTransientInput()
                         viewModel.openCodeFullscreen(blockId)
+                    },
+                    onLinkCardLongPress = { rawUrl ->
+                        dismissTransientInput()
+                        val opened = openUrlFromBlock(context, rawUrl)
+                        if (!opened) {
+                            Toast.makeText(context, "Could not open URL.", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 )
             }
@@ -564,7 +573,8 @@ private fun EditorCanvasContent(
     onToggleListItemCheckedOnCanvas: (String, String) -> Unit,
     onToggleListItemExpandedOnCanvas: (String, String) -> Unit,
     onToggleBlockExpandedOnCanvas: (String) -> Unit,
-    onCodeBlockLongPress: (String) -> Unit
+    onCodeBlockLongPress: (String) -> Unit,
+    onLinkCardLongPress: (String) -> Unit
 ) {
     val draft = uiState.draft ?: return
     val transition = rememberInfiniteTransition(label = "canvasAnimation")
@@ -602,9 +612,22 @@ private fun EditorCanvasContent(
             onToggleListItemChecked = onToggleListItemCheckedOnCanvas,
             onToggleListItemExpanded = onToggleListItemExpandedOnCanvas,
             onToggleBlockExpanded = onToggleBlockExpandedOnCanvas,
-            onCodeBlockLongPress = onCodeBlockLongPress
+            onCodeBlockLongPress = onCodeBlockLongPress,
+            onLinkCardLongPress = onLinkCardLongPress
         )
     }
+}
+
+private fun openUrlFromBlock(context: android.content.Context, rawUrl: String): Boolean {
+    val normalizedUrl = LinkPreviewMetadataFetcher.normalizeUrl(rawUrl) ?: return false
+    val uri = Uri.parse(normalizedUrl)
+    val intent = Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    val packageManager = context.packageManager
+    if (intent.resolveActivity(packageManager) == null) {
+        return false
+    }
+    context.startActivity(intent)
+    return true
 }
 
 @Composable
@@ -1208,6 +1231,22 @@ private fun BlockEditorSheet(
 
             MemoBlockType.LinkCard -> {
                 val link = block.payload as? MemoBlockPayload.LinkCard ?: MemoBlockPayload.LinkCard()
+                if (uiState.linkMetadataLoadingBlockId == block.id) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Text(
+                            text = "Fetching metadata...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
                 OutlinedTextField(
                     value = link.url,
                     onValueChange = { onUpdateLinkCard(it, link.title, link.description, link.imageUrl, link.faviconUrl) },
