@@ -25,6 +25,7 @@ data class MemoDraft(
                         .flatMap { block -> block.listItems }
                         .mapNotNull { item -> item.text.trim().takeIf(String::isNotBlank) }
                 )
+                .plus(blocks.flatMap { block -> block.payload.searchableTextParts() })
                 .joinToString(" ")
                 .takeIf(String::isNotBlank)
         )
@@ -37,12 +38,12 @@ data class MemoDraft(
                 MemoBlockType.List -> it.listItems.any { item -> item.text.isNotBlank() }
                 MemoBlockType.Image,
                 MemoBlockType.Drawing -> false
+                else -> it.payload.searchableTextParts().isNotEmpty()
             }
         }?.let {
-            if (it.type == MemoBlockType.List) {
-                it.listItems.firstOrNull { item -> item.text.isNotBlank() }?.text
-            } else {
-                it.text
+            when (it.type) {
+                MemoBlockType.List -> it.listItems.firstOrNull { item -> item.text.isNotBlank() }?.text
+                else -> it.payload.searchableTextParts().firstOrNull() ?: it.text
             }
         }
             ?: summaryLabel
@@ -57,6 +58,7 @@ data class MemoDraft(
                 MemoBlockType.Image -> !block.imageUri.isNullOrBlank()
                 MemoBlockType.Drawing -> block.strokes.any { it.points.size > 1 }
                 MemoBlockType.List -> block.listItems.any { it.text.isNotBlank() }
+                else -> block.payload.hasContent()
             }
         }
 
@@ -66,11 +68,29 @@ data class MemoDraft(
             val imageCount = blocks.count { it.type == MemoBlockType.Image && !it.imageUri.isNullOrBlank() }
             val drawingCount = blocks.count { it.type == MemoBlockType.Drawing && it.strokes.isNotEmpty() }
             val listCount = blocks.count { it.type == MemoBlockType.List && it.listItems.any { item -> item.text.isNotBlank() } }
+            val headingCount = blocks.count { it.type == MemoBlockType.Heading && it.payload.hasContent() }
+            val toggleCount = blocks.count { it.type == MemoBlockType.Toggle && it.payload.hasContent() }
+            val quoteCount = blocks.count { it.type == MemoBlockType.Quote && it.payload.hasContent() }
+            val codeCount = blocks.count { it.type == MemoBlockType.Code && it.payload.hasContent() }
+            val dividerCount = blocks.count { it.type == MemoBlockType.Divider }
+            val linkCardCount = blocks.count { it.type == MemoBlockType.LinkCard && it.payload.hasContent() }
+            val tableCount = blocks.count { it.type == MemoBlockType.Table && it.payload.hasContent() }
+            val conversationCount = blocks.count { it.type == MemoBlockType.Conversation && it.payload.hasContent() }
+            val latexCount = blocks.count { it.type == MemoBlockType.Latex && it.payload.hasContent() }
             val labels = buildList {
                 if (textCount > 0) add("$textCount text")
                 if (imageCount > 0) add("$imageCount image")
                 if (drawingCount > 0) add("$drawingCount drawing")
                 if (listCount > 0) add("$listCount list")
+                if (headingCount > 0) add("$headingCount heading")
+                if (toggleCount > 0) add("$toggleCount toggle")
+                if (quoteCount > 0) add("$quoteCount quote")
+                if (codeCount > 0) add("$codeCount code")
+                if (dividerCount > 0) add("$dividerCount divider")
+                if (linkCardCount > 0) add("$linkCardCount link")
+                if (tableCount > 0) add("$tableCount table")
+                if (conversationCount > 0) add("$conversationCount conversation")
+                if (latexCount > 0) add("$latexCount math")
             }
             return if (labels.isEmpty()) "(empty memo)" else labels.joinToString(" · ")
         }

@@ -24,9 +24,20 @@ enum class AnimationStyle(
     fun supports(blockType: MemoBlockType): Boolean {
         return when (blockType) {
             MemoBlockType.Text -> true
-            MemoBlockType.Image,
+            MemoBlockType.Image -> this != Typewriter
             MemoBlockType.Drawing -> this != Typewriter
             MemoBlockType.List -> this != Typewriter
+            MemoBlockType.Heading -> this != Typewriter
+            MemoBlockType.Toggle -> this != Typewriter
+            MemoBlockType.Quote -> this != Typewriter
+            MemoBlockType.Code -> this != Typewriter
+            MemoBlockType.Divider -> this == None
+            MemoBlockType.LinkCard -> this != Typewriter
+            MemoBlockType.Table -> this != Typewriter
+            MemoBlockType.Conversation -> this != Typewriter
+            MemoBlockType.Latex -> this != Typewriter
+            MemoBlockType.Unknown -> this == None
+            else -> this != Typewriter
         }
     }
 

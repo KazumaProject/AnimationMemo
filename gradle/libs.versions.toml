@@ -16,6 +16,8 @@ ksp = "2.0.21-1.0.28"
 materialIconsExtended = "1.7.8"
 gifencoder = "0.10.1"
 coreSplashscreen = "1.0.1"
+androidideTreesitter = "4.3.2"
+desugarJdkLibs = "2.1.5"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -42,6 +44,15 @@ androidx-datastore-preferences = { group = "androidx.datastore", name = "datasto
 androidx-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended", version.ref = "materialIconsExtended" }
 androidx-core-splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "coreSplashscreen" }
 squareup-gifencoder = { group = "com.squareup", name = "gifencoder", version.ref = "gifencoder" }
+androidide-treesitter-runtime = { group = "com.itsaky.androidide.treesitter", name = "android-tree-sitter", version.ref = "androidideTreesitter" }
+androidide-treesitter-kotlin = { group = "com.itsaky.androidide.treesitter", name = "tree-sitter-kotlin", version.ref = "androidideTreesitter" }
+androidide-treesitter-java = { group = "com.itsaky.androidide.treesitter", name = "tree-sitter-java", version.ref = "androidideTreesitter" }
+androidide-treesitter-python = { group = "com.itsaky.androidide.treesitter", name = "tree-sitter-python", version.ref = "androidideTreesitter" }
+androidide-treesitter-json = { group = "com.itsaky.androidide.treesitter", name = "tree-sitter-json", version.ref = "androidideTreesitter" }
+androidide-treesitter-xml = { group = "com.itsaky.androidide.treesitter", name = "tree-sitter-xml", version.ref = "androidideTreesitter" }
+androidide-treesitter-c = { group = "com.itsaky.androidide.treesitter", name = "tree-sitter-c", version.ref = "androidideTreesitter" }
+androidide-treesitter-cpp = { group = "com.itsaky.androidide.treesitter", name = "tree-sitter-cpp", version.ref = "androidideTreesitter" }
+android-tools-desugar-jdk-libs = { group = "com.android.tools", name = "desugar_jdk_libs", version.ref = "desugarJdkLibs" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

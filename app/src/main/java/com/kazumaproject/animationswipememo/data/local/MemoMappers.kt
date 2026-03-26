@@ -1,7 +1,11 @@
 package com.kazumaproject.animationswipememo.data.local
 
 import com.kazumaproject.animationswipememo.domain.model.AnimationStyle
+import com.kazumaproject.animationswipememo.domain.model.ConversationItem
+import com.kazumaproject.animationswipememo.domain.model.ConversationRole
+import com.kazumaproject.animationswipememo.domain.model.HeadingLevel
 import com.kazumaproject.animationswipememo.domain.model.MemoBlock
+import com.kazumaproject.animationswipememo.domain.model.MemoBlockPayload
 import com.kazumaproject.animationswipememo.domain.model.MemoBlockType
 import com.kazumaproject.animationswipememo.domain.model.MemoDraft
 import com.kazumaproject.animationswipememo.domain.model.MemoFontFamily
@@ -14,7 +18,9 @@ import com.kazumaproject.animationswipememo.domain.model.PaperStyle
 import com.kazumaproject.animationswipememo.domain.model.SavedDrawing
 import com.kazumaproject.animationswipememo.domain.model.StrokeData
 import com.kazumaproject.animationswipememo.domain.model.StrokePoint
+import com.kazumaproject.animationswipememo.domain.model.TableRow
 import com.kazumaproject.animationswipememo.domain.model.TextStyleSetting
+import com.kazumaproject.animationswipememo.domain.model.ToggleChildBlock
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -109,6 +115,7 @@ private fun encodeBlocks(blocks: List<MemoBlock>): String {
                 put("listMinFontScale", block.listAppearance?.minFontScale?.toDouble())
                 put("listIndentStepDp", block.listAppearance?.indentStepDp?.toDouble())
                 put("listMarkerGapDp", block.listAppearance?.markerGapDp?.toDouble())
+                put("payload", MemoBlockPayloadJsonCodec.encode(block.payload))
             }
         )
     }
@@ -121,9 +128,8 @@ private fun decodeBlocks(json: String): List<MemoBlock> {
         buildList {
             repeat(array.length()) { index ->
                 val item = array.getJSONObject(index)
-                val type = MemoBlockType.valueOf(
-                    item.optString("type", MemoBlockType.Text.name)
-                )
+                val rawType = item.optString("type", MemoBlockType.Text.name)
+                val type = runCatching { MemoBlockType.valueOf(rawType) }.getOrDefault(MemoBlockType.Unknown)
                 val strokes = decodeStrokes(
                     (item.optJSONArray("strokes") ?: JSONArray()).toString()
                 )
@@ -133,6 +139,7 @@ private fun decodeBlocks(json: String): List<MemoBlock> {
                     "UNORDERED" -> ListItemType.UNORDERED
                     else -> ListItemType.UNORDERED
                 }
+                val payloadFromJson = MemoBlockPayloadJsonCodec.decode(type = type, payloadJson = item.optJSONObject("payload"))
                 add(
                     MemoBlock(
                         id = item.getString("id"),
@@ -202,13 +209,109 @@ private fun decodeBlocks(json: String): List<MemoBlock> {
                                 indentStepDp = item.optDouble("listIndentStepDp", 16.0).toFloat(),
                                 markerGapDp = item.optDouble("listMarkerGapDp", 8.0).toFloat()
                             )
-                        }
+                        },
+                        payload = payloadFromJson.takeUnless { it == MemoBlockPayload.None }
+                            ?: legacyPayloadFor(type = type, rawType = rawType, item = item)
                     )
                 )
             }
         }
     }.getOrElse {
         listOf(MemoBlock.createText(defaultAnimation = AnimationStyle.Fade))
+    }
+}
+
+private fun legacyPayloadFor(
+    type: MemoBlockType,
+    rawType: String,
+    item: JSONObject
+): MemoBlockPayload {
+    return when (type) {
+        MemoBlockType.Heading -> MemoBlockPayload.Heading(
+            level = runCatching { HeadingLevel.valueOf(item.optString("headingLevel", HeadingLevel.H1.name)) }
+                .getOrDefault(HeadingLevel.H1),
+            text = item.optString("text")
+        )
+
+        MemoBlockType.Toggle -> MemoBlockPayload.Toggle(
+            title = item.optString("text"),
+            initiallyExpanded = item.optBoolean("toggleInitiallyExpanded", true),
+            childBlocks = (item.optJSONArray("toggleChildren") ?: JSONArray()).let { children ->
+                buildList {
+                    repeat(children.length()) { index ->
+                        val child = children.optJSONObject(index) ?: return@repeat
+                        add(
+                            ToggleChildBlock(
+                                id = child.optString("id").ifBlank { java.util.UUID.randomUUID().toString() },
+                                type = runCatching { MemoBlockType.valueOf(child.optString("type")) }.getOrDefault(MemoBlockType.Text),
+                                text = child.optString("text")
+                            )
+                        )
+                    }
+                }
+            }
+        )
+
+        MemoBlockType.Quote -> MemoBlockPayload.Quote(text = item.optString("text"))
+        MemoBlockType.Code -> MemoBlockPayload.Code(
+            language = item.optString("codeLanguage", "Plain Text"),
+            code = item.optString("text")
+        )
+
+        MemoBlockType.Divider -> MemoBlockPayload.Divider
+        MemoBlockType.LinkCard -> MemoBlockPayload.LinkCard(
+            url = item.optString("linkUrl"),
+            title = item.optString("linkTitle"),
+            description = item.optString("linkDescription"),
+            imageUrl = item.optString("linkImageUrl"),
+            faviconUrl = item.optString("linkFaviconUrl")
+        )
+
+        MemoBlockType.Table -> MemoBlockPayload.Table(
+            rows = (item.optJSONArray("tableRows") ?: JSONArray()).let { rowsJson ->
+                if (rowsJson.length() == 0) {
+                    listOf(TableRow(cells = listOf("", "")), TableRow(cells = listOf("", "")))
+                } else {
+                    buildList {
+                        repeat(rowsJson.length()) { rowIndex ->
+                            val row = rowsJson.optJSONArray(rowIndex) ?: JSONArray()
+                            add(TableRow(cells = buildList {
+                                repeat(row.length()) { cellIndex ->
+                                    add(row.optString(cellIndex))
+                                }
+                            }))
+                        }
+                    }
+                }
+            }
+        )
+
+        MemoBlockType.Conversation -> MemoBlockPayload.Conversation(
+            items = (item.optJSONArray("conversationItems") ?: JSONArray()).let { itemsJson ->
+                if (itemsJson.length() == 0) {
+                    listOf(ConversationItem(speaker = "A", text = "", role = ConversationRole.Left))
+                } else {
+                    buildList {
+                        repeat(itemsJson.length()) { conversationIndex ->
+                            val conversation = itemsJson.optJSONObject(conversationIndex) ?: return@repeat
+                            add(
+                                ConversationItem(
+                                    speaker = conversation.optString("speaker"),
+                                    text = conversation.optString("text"),
+                                    role = runCatching {
+                                        ConversationRole.valueOf(conversation.optString("role", ConversationRole.Left.name))
+                                    }.getOrDefault(ConversationRole.Left)
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        )
+
+        MemoBlockType.Latex -> MemoBlockPayload.Latex(expression = item.optString("text"))
+        MemoBlockType.Unknown -> MemoBlockPayload.Unknown(rawType = rawType, rawPayloadJson = item.toString())
+        else -> MemoBlockPayload.None
     }
 }
 

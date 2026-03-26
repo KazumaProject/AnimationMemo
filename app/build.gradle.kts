@@ -31,6 +31,7 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true
     }
     kotlinOptions {
         jvmTarget = "17"
@@ -57,6 +58,15 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.core.splashscreen)
     implementation(libs.squareup.gifencoder)
+    implementation(libs.androidide.treesitter.runtime)
+    implementation(libs.androidide.treesitter.kotlin)
+    implementation(libs.androidide.treesitter.java)
+    implementation(libs.androidide.treesitter.python)
+    implementation(libs.androidide.treesitter.json)
+    implementation(libs.androidide.treesitter.xml)
+    implementation(libs.androidide.treesitter.c)
+    implementation(libs.androidide.treesitter.cpp)
+    coreLibraryDesugaring(libs.android.tools.desugar.jdk.libs)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)

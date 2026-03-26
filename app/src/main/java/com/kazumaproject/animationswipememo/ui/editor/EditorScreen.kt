@@ -45,15 +45,27 @@ import androidx.compose.material.icons.outlined.AutoFixHigh
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.Draw
+import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.FileDownload
+import androidx.compose.material.icons.outlined.Forum
+import androidx.compose.material.icons.outlined.FormatQuote
+import androidx.compose.material.icons.outlined.Functions
+import androidx.compose.material.icons.outlined.HorizontalRule
 import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.TableChart
+import androidx.compose.material.icons.outlined.Title
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -80,6 +92,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -92,16 +105,22 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kazumaproject.animationswipememo.domain.model.AnimationStyle
+import com.kazumaproject.animationswipememo.domain.model.ConversationRole
+import com.kazumaproject.animationswipememo.domain.model.HeadingLevel
 import com.kazumaproject.animationswipememo.domain.model.ListAppearance
 import com.kazumaproject.animationswipememo.domain.model.ListItemType
+import com.kazumaproject.animationswipememo.domain.model.MemoBlockPayload
 import com.kazumaproject.animationswipememo.domain.model.MemoBlockType
 import com.kazumaproject.animationswipememo.domain.model.MemoFontFamily
 import com.kazumaproject.animationswipememo.domain.model.TextStyleSetting
 import com.kazumaproject.animationswipememo.domain.model.ThemeMode
 import com.kazumaproject.animationswipememo.ui.components.AnimationStyleChips
 import com.kazumaproject.animationswipememo.ui.components.DrawingEditorOverlay
+import com.kazumaproject.animationswipememo.ui.components.render.KatexBlockView
 import com.kazumaproject.animationswipememo.ui.components.PaperMemoCanvas
 import com.kazumaproject.animationswipememo.ui.components.SavedDrawingLibrarySheet
+import com.kazumaproject.animationswipememo.ui.components.render.highlightCode
+import com.kazumaproject.animationswipememo.ui.components.render.supportedCodeLanguages
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -248,6 +267,21 @@ fun EditorScreen(
                 onMoveListItemUp = viewModel::moveListItemUp,
                 onMoveListItemDown = viewModel::moveListItemDown,
                 onListAppearanceChange = viewModel::updateSelectedListAppearance,
+                onHeadingLevelChange = viewModel::updateHeadingLevel,
+                onToggleInitiallyExpandedChange = viewModel::updateToggleInitiallyExpanded,
+                onAddToggleChild = viewModel::addToggleChild,
+                onUpdateToggleChildText = viewModel::updateToggleChildText,
+                onRemoveToggleChild = viewModel::removeToggleChild,
+                onCodeLanguageChange = viewModel::updateCodeLanguage,
+                onUpdateLinkCard = viewModel::updateLinkCard,
+                onUpdateTableCell = viewModel::updateTableCell,
+                onAddTableRow = viewModel::addTableRow,
+                onRemoveTableRow = viewModel::removeTableRow,
+                onAddTableColumn = viewModel::addTableColumn,
+                onRemoveTableColumn = viewModel::removeTableColumn,
+                onAddConversationItem = viewModel::addConversationItem,
+                onUpdateConversationItem = viewModel::updateConversationItem,
+                onRemoveConversationItem = viewModel::removeConversationItem,
                 onDeleteBlock = viewModel::deleteSelectedBlock,
                 onClose = {
                     dismissTransientInput()
@@ -294,6 +328,15 @@ fun EditorScreen(
                         PaletteAction.AddText -> viewModel.addTextBlock()
                         PaletteAction.AddImage -> imagePicker.launch(arrayOf("image/*"))
                         PaletteAction.AddList -> viewModel.addListBlock()
+                        PaletteAction.AddHeading -> viewModel.addHeadingBlock()
+                        PaletteAction.AddToggle -> viewModel.addToggleBlock()
+                        PaletteAction.AddQuote -> viewModel.addQuoteBlock()
+                        PaletteAction.AddCode -> viewModel.addCodeBlock()
+                        PaletteAction.AddDivider -> viewModel.addDividerBlock()
+                        PaletteAction.AddLinkCard -> viewModel.addLinkCardBlock()
+                        PaletteAction.AddTable -> viewModel.addTableBlock()
+                        PaletteAction.AddConversation -> viewModel.addConversationBlock()
+                        PaletteAction.AddLatex -> viewModel.addLatexBlock()
                         PaletteAction.OpenDrawingLibrary -> viewModel.openDrawingLibrary()
                         PaletteAction.EditSelected -> {
                             Log.d(EDITOR_SCREEN_TAG, "Palette Edit tapped")
@@ -450,6 +493,7 @@ fun EditorScreen(
                     onBlockScale = viewModel::scaleBlock,
                     onToggleListItemCheckedOnCanvas = viewModel::toggleListItemCheckedFromCanvas,
                     onToggleListItemExpandedOnCanvas = viewModel::toggleListItemExpandedFromCanvas,
+                    onToggleBlockExpandedOnCanvas = viewModel::toggleToggleExpandedFromCanvas,
                 )
             }
         }
@@ -483,7 +527,8 @@ private fun EditorCanvasContent(
     onBlockDrag: (String, Float, Float) -> Unit,
     onBlockScale: (String, Float) -> Unit,
     onToggleListItemCheckedOnCanvas: (String, String) -> Unit,
-    onToggleListItemExpandedOnCanvas: (String, String) -> Unit
+    onToggleListItemExpandedOnCanvas: (String, String) -> Unit,
+    onToggleBlockExpandedOnCanvas: (String) -> Unit
 ) {
     val draft = uiState.draft ?: return
     val transition = rememberInfiniteTransition(label = "canvasAnimation")
@@ -519,7 +564,8 @@ private fun EditorCanvasContent(
             onBlockDrag = onBlockDrag,
             onBlockScale = onBlockScale,
             onToggleListItemChecked = onToggleListItemCheckedOnCanvas,
-            onToggleListItemExpanded = onToggleListItemExpandedOnCanvas
+            onToggleListItemExpanded = onToggleListItemExpandedOnCanvas,
+            onToggleBlockExpanded = onToggleBlockExpandedOnCanvas
         )
     }
 }
@@ -766,6 +812,15 @@ private fun paletteIcon(icon: PaletteIcon): ImageVector {
         PaletteIcon.AddText -> Icons.AutoMirrored.Outlined.NoteAdd
         PaletteIcon.AddImage -> Icons.Outlined.Image
         PaletteIcon.AddList -> Icons.AutoMirrored.Outlined.List
+        PaletteIcon.AddHeading -> Icons.Outlined.Title
+        PaletteIcon.AddToggle -> Icons.Outlined.Visibility
+        PaletteIcon.AddQuote -> Icons.Outlined.FormatQuote
+        PaletteIcon.AddCode -> Icons.Outlined.Code
+        PaletteIcon.AddDivider -> Icons.Outlined.HorizontalRule
+        PaletteIcon.AddLink -> Icons.Outlined.Link
+        PaletteIcon.AddTable -> Icons.Outlined.TableChart
+        PaletteIcon.AddConversation -> Icons.Outlined.Forum
+        PaletteIcon.AddLatex -> Icons.Outlined.Functions
         PaletteIcon.Handwriting -> Icons.Outlined.AutoFixHigh
         PaletteIcon.Edit -> Icons.Outlined.Draw
         PaletteIcon.Export -> Icons.Outlined.FileDownload
@@ -774,6 +829,7 @@ private fun paletteIcon(icon: PaletteIcon): ImageVector {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun BlockEditorSheet(
     uiState: EditorUiState,
@@ -796,6 +852,21 @@ private fun BlockEditorSheet(
     onMoveListItemUp: (String) -> Unit,
     onMoveListItemDown: (String) -> Unit,
     onListAppearanceChange: (ListAppearance) -> Unit,
+    onHeadingLevelChange: (HeadingLevel) -> Unit,
+    onToggleInitiallyExpandedChange: (Boolean) -> Unit,
+    onAddToggleChild: () -> Unit,
+    onUpdateToggleChildText: (String, String) -> Unit,
+    onRemoveToggleChild: (String) -> Unit,
+    onCodeLanguageChange: (String) -> Unit,
+    onUpdateLinkCard: (String, String, String, String, String) -> Unit,
+    onUpdateTableCell: (String, Int, String) -> Unit,
+    onAddTableRow: () -> Unit,
+    onRemoveTableRow: (String) -> Unit,
+    onAddTableColumn: () -> Unit,
+    onRemoveTableColumn: (Int) -> Unit,
+    onAddConversationItem: () -> Unit,
+    onUpdateConversationItem: (String, String, String, ConversationRole) -> Unit,
+    onRemoveConversationItem: (String) -> Unit,
     onDeleteBlock: () -> Unit,
     onClose: () -> Unit
 ) {
@@ -815,6 +886,16 @@ private fun BlockEditorSheet(
                 MemoBlockType.Image -> "Image block editor"
                 MemoBlockType.Drawing -> "Handwriting block editor"
                 MemoBlockType.List -> "List block editor"
+                MemoBlockType.Heading -> "Heading block editor"
+                MemoBlockType.Toggle -> "Toggle block editor"
+                MemoBlockType.Quote -> "Quote block editor"
+                MemoBlockType.Code -> "Code block editor"
+                MemoBlockType.Divider -> "Divider block editor"
+                MemoBlockType.LinkCard -> "Link card editor"
+                MemoBlockType.Table -> "Table block editor"
+                MemoBlockType.Conversation -> "Conversation block editor"
+                MemoBlockType.Latex -> "Math block editor"
+                MemoBlockType.Unknown -> "Unsupported block"
             },
             style = MaterialTheme.typography.titleLarge
         )
@@ -866,6 +947,253 @@ private fun BlockEditorSheet(
                     onMoveDown = onMoveListItemDown
                 )
             }
+
+            MemoBlockType.Heading -> {
+                val heading = block.payload as? MemoBlockPayload.Heading ?: MemoBlockPayload.Heading()
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    HeadingLevel.entries.forEach { level ->
+                        FilterChip(
+                            selected = heading.level == level,
+                            onClick = { onHeadingLevelChange(level) },
+                            label = { Text(level.name) }
+                        )
+                    }
+                }
+                OutlinedTextField(
+                    value = heading.text,
+                    onValueChange = onTextChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Heading text") },
+                    minLines = 2,
+                    maxLines = 4
+                )
+            }
+
+            MemoBlockType.Toggle -> {
+                val toggle = block.payload as? MemoBlockPayload.Toggle ?: MemoBlockPayload.Toggle()
+                OutlinedTextField(
+                    value = toggle.title,
+                    onValueChange = onTextChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Toggle title") },
+                    singleLine = true
+                )
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Initially expanded")
+                    Switch(
+                        checked = toggle.initiallyExpanded,
+                        onCheckedChange = onToggleInitiallyExpandedChange
+                    )
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Child blocks", style = MaterialTheme.typography.titleMedium)
+                    toggle.childBlocks.forEachIndexed { index, child ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedTextField(
+                                value = child.text,
+                                onValueChange = { onUpdateToggleChildText(child.id, it) },
+                                modifier = Modifier.weight(1f),
+                                label = { Text("Child ${index + 1}") },
+                                singleLine = true
+                            )
+                            TextButton(onClick = { onRemoveToggleChild(child.id) }) {
+                                Text("Delete")
+                            }
+                        }
+                    }
+                    TextButton(onClick = onAddToggleChild) {
+                        Text("Add child block")
+                    }
+                }
+            }
+
+            MemoBlockType.Quote -> {
+                OutlinedTextField(
+                    value = (block.payload as? MemoBlockPayload.Quote)?.text ?: block.text,
+                    onValueChange = onTextChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Quote text") },
+                    minLines = 3,
+                    maxLines = 8
+                )
+            }
+
+            MemoBlockType.Code -> {
+                val code = block.payload as? MemoBlockPayload.Code ?: MemoBlockPayload.Code()
+                CodeLanguageSelector(
+                    selectedLanguage = code.language,
+                    onLanguageSelected = onCodeLanguageChange
+                )
+                OutlinedTextField(
+                    value = code.code,
+                    onValueChange = onTextChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Code") },
+                    minLines = 6,
+                    maxLines = 14
+                )
+                if (code.code.isNotBlank()) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = highlightCode(
+                                language = code.language,
+                                code = code.code,
+                                defaultColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            ),
+                            modifier = Modifier.padding(12.dp),
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                            )
+                        )
+                    }
+                }
+            }
+
+            MemoBlockType.Divider -> {
+                Text(
+                    text = "No additional settings for divider blocks.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            MemoBlockType.LinkCard -> {
+                val link = block.payload as? MemoBlockPayload.LinkCard ?: MemoBlockPayload.LinkCard()
+                OutlinedTextField(
+                    value = link.url,
+                    onValueChange = { onUpdateLinkCard(it, link.title, link.description, link.imageUrl, link.faviconUrl) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("URL") },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = link.title,
+                    onValueChange = { onUpdateLinkCard(link.url, it, link.description, link.imageUrl, link.faviconUrl) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Title") },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = link.description,
+                    onValueChange = { onUpdateLinkCard(link.url, link.title, it, link.imageUrl, link.faviconUrl) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Description") },
+                    minLines = 2,
+                    maxLines = 4
+                )
+                OutlinedTextField(
+                    value = link.imageUrl,
+                    onValueChange = { onUpdateLinkCard(link.url, link.title, link.description, it, link.faviconUrl) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Image URL") },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = link.faviconUrl,
+                    onValueChange = { onUpdateLinkCard(link.url, link.title, link.description, link.imageUrl, it) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Favicon URL") },
+                    singleLine = true
+                )
+            }
+
+            MemoBlockType.Table -> {
+                val table = block.payload as? MemoBlockPayload.Table ?: MemoBlockPayload.Table()
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = onAddTableRow) { Text("Add row") }
+                    TextButton(onClick = onAddTableColumn) { Text("Add column") }
+                    TextButton(onClick = { onRemoveTableColumn(0) }) { Text("Remove first column") }
+                }
+                table.rows.forEachIndexed { rowIndex, row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("R${rowIndex + 1}")
+                        row.cells.forEachIndexed { columnIndex, cell ->
+                            OutlinedTextField(
+                                value = cell,
+                                onValueChange = { onUpdateTableCell(row.id, columnIndex, it) },
+                                modifier = Modifier.weight(1f),
+                                label = { Text("C${columnIndex + 1}") },
+                                singleLine = true
+                            )
+                        }
+                        TextButton(onClick = { onRemoveTableRow(row.id) }) { Text("Delete") }
+                    }
+                }
+            }
+
+            MemoBlockType.Conversation -> {
+                val conversation = block.payload as? MemoBlockPayload.Conversation ?: MemoBlockPayload.Conversation()
+                conversation.items.forEachIndexed { index, item ->
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Line ${index + 1}", style = MaterialTheme.typography.titleSmall)
+                        OutlinedTextField(
+                            value = item.speaker,
+                            onValueChange = { onUpdateConversationItem(item.id, it, item.text, item.role) },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Speaker") },
+                            singleLine = true
+                        )
+                        OutlinedTextField(
+                            value = item.text,
+                            onValueChange = { onUpdateConversationItem(item.id, item.speaker, it, item.role) },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Text") },
+                            minLines = 2,
+                            maxLines = 4
+                        )
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            ConversationRole.entries.forEach { role ->
+                                FilterChip(
+                                    selected = item.role == role,
+                                    onClick = { onUpdateConversationItem(item.id, item.speaker, item.text, role) },
+                                    label = { Text(role.name) }
+                                )
+                            }
+                        }
+                        TextButton(onClick = { onRemoveConversationItem(item.id) }) { Text("Delete line") }
+                    }
+                }
+                TextButton(onClick = onAddConversationItem) {
+                    Text("Add line")
+                }
+            }
+
+            MemoBlockType.Latex -> {
+                val latex = block.payload as? MemoBlockPayload.Latex ?: MemoBlockPayload.Latex()
+                OutlinedTextField(
+                    value = latex.expression,
+                    onValueChange = onTextChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Math expression (LaTeX)") },
+                    minLines = 3,
+                    maxLines = 8
+                )
+                if (latex.expression.isNotBlank()) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        KatexBlockView(
+                            expression = latex.expression,
+                            darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                }
+            }
+
+            MemoBlockType.Unknown -> {
+                Text(
+                    text = "This block type is not supported in this app version.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -880,7 +1208,7 @@ private fun BlockEditorSheet(
             )
         }
 
-        if (block.type == MemoBlockType.Text) {
+        if (block.supportsTextStyleControls) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     text = "Font",
@@ -920,7 +1248,7 @@ private fun BlockEditorSheet(
 
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
-                text = if (block.type == MemoBlockType.Text || block.type == MemoBlockType.List) {
+                text = if (block.supportsTextSizing) {
                     "Text area width: ${(block.widthFraction * 100f).toInt()}%"
                 } else {
                     "Width: ${(block.widthFraction * 100f).toInt()}%"
@@ -935,7 +1263,7 @@ private fun BlockEditorSheet(
         }
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
-                text = if (block.type == MemoBlockType.Text || block.type == MemoBlockType.List) {
+                text = if (block.supportsTextSizing) {
                     "Text area height: ${(block.heightFraction * 100f).toInt()}%"
                 } else {
                     "Height: ${(block.heightFraction * 100f).toInt()}%"
@@ -958,6 +1286,64 @@ private fun BlockEditorSheet(
             }
             TextButton(onClick = onClose) {
                 Text("Done")
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CodeLanguageSelector(
+    selectedLanguage: String,
+    onLanguageSelected: (String) -> Unit
+) {
+    val allLanguages = remember { supportedCodeLanguages() }
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    var query by rememberSaveable(selectedLanguage) {
+        mutableStateOf(selectedLanguage.ifBlank { allLanguages.firstOrNull().orEmpty() })
+    }
+
+    val filtered = remember(query, allLanguages) {
+        val normalized = query.trim()
+        if (normalized.isBlank()) {
+            allLanguages
+        } else {
+            allLanguages.filter { it.contains(normalized, ignoreCase = true) }
+        }
+    }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded }
+    ) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = {
+                query = it
+                expanded = true
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .menuAnchor(),
+            label = { Text("Language") },
+            singleLine = true,
+            trailingIcon = {
+                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+            }
+        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            filtered.forEach { language ->
+                DropdownMenuItem(
+                    text = { Text(language) },
+                    onClick = {
+                        query = language
+                        onLanguageSelected(language)
+                        expanded = false
+                    }
+                )
             }
         }
     }

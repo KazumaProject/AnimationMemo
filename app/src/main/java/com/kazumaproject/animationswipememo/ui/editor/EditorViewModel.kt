@@ -12,20 +12,27 @@ import com.kazumaproject.animationswipememo.di.AppContainer
 import com.kazumaproject.animationswipememo.domain.export.AnimationExporter
 import com.kazumaproject.animationswipememo.domain.export.ExportRequest
 import com.kazumaproject.animationswipememo.domain.model.AnimationStyle
+import com.kazumaproject.animationswipememo.domain.model.ConversationItem
+import com.kazumaproject.animationswipememo.domain.model.ConversationRole
+import com.kazumaproject.animationswipememo.domain.model.HeadingLevel
 import com.kazumaproject.animationswipememo.domain.model.ListAppearance
 import com.kazumaproject.animationswipememo.domain.model.ListItemType
 import com.kazumaproject.animationswipememo.domain.model.MemoBlock
+import com.kazumaproject.animationswipememo.domain.model.MemoBlockPayload
 import com.kazumaproject.animationswipememo.domain.model.MemoBlockType
 import com.kazumaproject.animationswipememo.domain.model.MemoDraft
 import com.kazumaproject.animationswipememo.domain.model.MemoFontFamily
 import com.kazumaproject.animationswipememo.domain.model.PaperStyle
 import com.kazumaproject.animationswipememo.domain.model.SavedDrawing
 import com.kazumaproject.animationswipememo.domain.model.StrokeData
+import com.kazumaproject.animationswipememo.domain.model.TableRow
 import com.kazumaproject.animationswipememo.domain.model.TextStyleSetting
+import com.kazumaproject.animationswipememo.domain.model.ToggleChildBlock
 import com.kazumaproject.animationswipememo.domain.repository.MemoRepository
 import com.kazumaproject.animationswipememo.domain.repository.SavedDrawingRepository
 import com.kazumaproject.animationswipememo.domain.repository.SettingsRepository
 import com.kazumaproject.animationswipememo.domain.usecase.ListBlockEditorUseCase
+import com.kazumaproject.animationswipememo.ui.components.render.supportedCodeLanguages
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -203,6 +210,87 @@ class EditorViewModel(
         toolPaletteVisibleState.value = false
     }
 
+    fun addHeadingBlock() {
+        val draft = draftState.value ?: return
+        val newBlock = MemoBlock.createHeading(
+            defaultAnimation = uiState.value.settings.defaultAnimation,
+            y = (0.2f + (draft.blocks.size * 0.09f)).coerceAtMost(0.76f)
+        )
+        insertBlockAndOpenEditor(draft = draft, newBlock = newBlock)
+    }
+
+    fun addToggleBlock() {
+        val draft = draftState.value ?: return
+        val newBlock = MemoBlock.createToggle(
+            defaultAnimation = uiState.value.settings.defaultAnimation,
+            y = (0.24f + (draft.blocks.size * 0.08f)).coerceAtMost(0.8f)
+        )
+        insertBlockAndOpenEditor(draft = draft, newBlock = newBlock)
+    }
+
+    fun addQuoteBlock() {
+        val draft = draftState.value ?: return
+        val newBlock = MemoBlock.createQuote(
+            defaultAnimation = uiState.value.settings.defaultAnimation,
+            y = (0.26f + (draft.blocks.size * 0.08f)).coerceAtMost(0.8f)
+        )
+        insertBlockAndOpenEditor(draft = draft, newBlock = newBlock)
+    }
+
+    fun addCodeBlock() {
+        val draft = draftState.value ?: return
+        val newBlock = MemoBlock.createCode(
+            defaultAnimation = uiState.value.settings.defaultAnimation,
+            y = (0.28f + (draft.blocks.size * 0.08f)).coerceAtMost(0.82f)
+        )
+        insertBlockAndOpenEditor(draft = draft, newBlock = newBlock)
+    }
+
+    fun addDividerBlock() {
+        val draft = draftState.value ?: return
+        val newBlock = MemoBlock.createDivider(
+            defaultAnimation = uiState.value.settings.defaultAnimation,
+            y = (0.32f + (draft.blocks.size * 0.06f)).coerceAtMost(0.84f)
+        )
+        insertBlockAndOpenEditor(draft = draft, newBlock = newBlock)
+    }
+
+    fun addLinkCardBlock() {
+        val draft = draftState.value ?: return
+        val newBlock = MemoBlock.createLinkCard(
+            defaultAnimation = uiState.value.settings.defaultAnimation,
+            y = (0.34f + (draft.blocks.size * 0.06f)).coerceAtMost(0.84f)
+        )
+        insertBlockAndOpenEditor(draft = draft, newBlock = newBlock)
+    }
+
+    fun addTableBlock() {
+        val draft = draftState.value ?: return
+        val newBlock = MemoBlock.createTable(
+            defaultAnimation = uiState.value.settings.defaultAnimation,
+            y = (0.34f + (draft.blocks.size * 0.07f)).coerceAtMost(0.84f)
+        )
+        insertBlockAndOpenEditor(draft = draft, newBlock = newBlock)
+    }
+
+    fun addConversationBlock() {
+        val draft = draftState.value ?: return
+        val newBlock = MemoBlock.createConversation(
+            defaultAnimation = uiState.value.settings.defaultAnimation,
+            y = (0.34f + (draft.blocks.size * 0.07f)).coerceAtMost(0.84f)
+        )
+        insertBlockAndOpenEditor(draft = draft, newBlock = newBlock)
+    }
+
+    fun addLatexBlock() {
+        val draft = draftState.value ?: return
+        val newBlock = MemoBlock.createLatex(
+            defaultAnimation = uiState.value.settings.defaultAnimation,
+            y = (0.3f + (draft.blocks.size * 0.07f)).coerceAtMost(0.82f)
+        )
+        insertBlockAndOpenEditor(draft = draft, newBlock = newBlock)
+    }
+
     fun selectBlock(blockId: String) {
         selectedBlockIdState.value = blockId
     }
@@ -377,7 +465,194 @@ class EditorViewModel(
 
     fun updateSelectedBlockText(text: String) {
         updateSelectedBlock { block ->
-            block.copy(text = text.take(160))
+            val sanitized = text.take(400)
+            val nextPayload = when (val payload = block.payload) {
+                is MemoBlockPayload.Heading -> payload.copy(text = sanitized)
+                is MemoBlockPayload.Quote -> payload.copy(text = sanitized)
+                is MemoBlockPayload.Code -> payload.copy(code = sanitized)
+                is MemoBlockPayload.Latex -> payload.copy(expression = sanitized)
+                is MemoBlockPayload.Toggle -> payload.copy(title = sanitized)
+                else -> payload
+            }
+            block.copy(text = sanitized, payload = nextPayload)
+        }
+    }
+
+    fun updateHeadingLevel(level: HeadingLevel) {
+        updateSelectedBlock { block ->
+            val heading = block.payload as? MemoBlockPayload.Heading ?: return@updateSelectedBlock block
+            block.copy(payload = heading.copy(level = level))
+        }
+    }
+
+    fun updateToggleInitiallyExpanded(initiallyExpanded: Boolean) {
+        updateSelectedBlock { block ->
+            val toggle = block.payload as? MemoBlockPayload.Toggle ?: return@updateSelectedBlock block
+            block.copy(payload = toggle.copy(initiallyExpanded = initiallyExpanded))
+        }
+    }
+
+    fun addToggleChild() {
+        updateSelectedBlock { block ->
+            val toggle = block.payload as? MemoBlockPayload.Toggle ?: return@updateSelectedBlock block
+            block.copy(payload = toggle.copy(childBlocks = toggle.childBlocks + ToggleChildBlock()))
+        }
+    }
+
+    fun updateToggleChildText(childId: String, text: String) {
+        updateSelectedBlock { block ->
+            val toggle = block.payload as? MemoBlockPayload.Toggle ?: return@updateSelectedBlock block
+            block.copy(
+                payload = toggle.copy(
+                    childBlocks = toggle.childBlocks.map { child ->
+                        if (child.id == childId) child.copy(text = text.take(300)) else child
+                    }
+                )
+            )
+        }
+    }
+
+    fun removeToggleChild(childId: String) {
+        updateSelectedBlock { block ->
+            val toggle = block.payload as? MemoBlockPayload.Toggle ?: return@updateSelectedBlock block
+            block.copy(payload = toggle.copy(childBlocks = toggle.childBlocks.filterNot { it.id == childId }))
+        }
+    }
+
+    fun updateCodeLanguage(language: String) {
+        updateSelectedBlock { block ->
+            val code = block.payload as? MemoBlockPayload.Code ?: return@updateSelectedBlock block
+            val supported = supportedCodeLanguages()
+            val normalized = supported.firstOrNull { it.equals(language.trim(), ignoreCase = true) }
+                ?: language.take(40).ifBlank { "Plain Text" }
+            block.copy(payload = code.copy(language = normalized))
+        }
+    }
+
+    fun updateLinkCard(
+        url: String,
+        title: String,
+        description: String,
+        imageUrl: String,
+        faviconUrl: String
+    ) {
+        updateSelectedBlock { block ->
+            val link = block.payload as? MemoBlockPayload.LinkCard ?: return@updateSelectedBlock block
+            block.copy(
+                payload = link.copy(
+                    url = url.take(400),
+                    title = title.take(120),
+                    description = description.take(300),
+                    imageUrl = imageUrl.take(400),
+                    faviconUrl = faviconUrl.take(400)
+                )
+            )
+        }
+    }
+
+    fun updateTableCell(rowId: String, columnIndex: Int, value: String) {
+        updateSelectedBlock { block ->
+            val table = block.payload as? MemoBlockPayload.Table ?: return@updateSelectedBlock block
+            block.copy(
+                payload = table.copy(
+                    rows = table.rows.map { row ->
+                        if (row.id != rowId) {
+                            row
+                        } else {
+                            row.copy(
+                                cells = row.cells.mapIndexed { index, cell ->
+                                    if (index == columnIndex) value.take(120) else cell
+                                }
+                            )
+                        }
+                    }
+                )
+            )
+        }
+    }
+
+    fun addTableRow() {
+        updateSelectedBlock { block ->
+            val table = block.payload as? MemoBlockPayload.Table ?: return@updateSelectedBlock block
+            val columnCount = table.rows.maxOfOrNull { it.cells.size } ?: 2
+            block.copy(payload = table.copy(rows = table.rows + TableRow(cells = List(columnCount) { "" })))
+        }
+    }
+
+    fun removeTableRow(rowId: String) {
+        updateSelectedBlock { block ->
+            val table = block.payload as? MemoBlockPayload.Table ?: return@updateSelectedBlock block
+            val nextRows = table.rows.filterNot { it.id == rowId }
+            block.copy(payload = table.copy(rows = if (nextRows.isEmpty()) table.rows else nextRows))
+        }
+    }
+
+    fun addTableColumn() {
+        updateSelectedBlock { block ->
+            val table = block.payload as? MemoBlockPayload.Table ?: return@updateSelectedBlock block
+            block.copy(
+                payload = table.copy(rows = table.rows.map { row -> row.copy(cells = row.cells + "") })
+            )
+        }
+    }
+
+    fun removeTableColumn(columnIndex: Int) {
+        updateSelectedBlock { block ->
+            val table = block.payload as? MemoBlockPayload.Table ?: return@updateSelectedBlock block
+            val hasAnyRemovable = table.rows.any { it.cells.size > 1 && columnIndex in it.cells.indices }
+            if (!hasAnyRemovable) return@updateSelectedBlock block
+            block.copy(
+                payload = table.copy(
+                    rows = table.rows.map { row ->
+                        if (row.cells.size <= 1 || columnIndex !in row.cells.indices) {
+                            row
+                        } else {
+                            row.copy(cells = row.cells.filterIndexed { index, _ -> index != columnIndex })
+                        }
+                    }
+                )
+            )
+        }
+    }
+
+    fun addConversationItem() {
+        updateSelectedBlock { block ->
+            val conversation = block.payload as? MemoBlockPayload.Conversation ?: return@updateSelectedBlock block
+            block.copy(payload = conversation.copy(items = conversation.items + ConversationItem()))
+        }
+    }
+
+    fun updateConversationItem(
+        itemId: String,
+        speaker: String,
+        text: String,
+        role: ConversationRole
+    ) {
+        updateSelectedBlock { block ->
+            val conversation = block.payload as? MemoBlockPayload.Conversation ?: return@updateSelectedBlock block
+            block.copy(
+                payload = conversation.copy(
+                    items = conversation.items.map { item ->
+                        if (item.id == itemId) {
+                            item.copy(
+                                speaker = speaker.take(60),
+                                text = text.take(240),
+                                role = role
+                            )
+                        } else {
+                            item
+                        }
+                    }
+                )
+            )
+        }
+    }
+
+    fun removeConversationItem(itemId: String) {
+        updateSelectedBlock { block ->
+            val conversation = block.payload as? MemoBlockPayload.Conversation ?: return@updateSelectedBlock block
+            val nextItems = conversation.items.filterNot { it.id == itemId }
+            block.copy(payload = conversation.copy(items = if (nextItems.isEmpty()) conversation.items else nextItems))
         }
     }
 
@@ -428,6 +703,22 @@ class EditorViewModel(
                     listBlockEditorUseCase.toggleListItemExpanded(block, itemId)
                 } else {
                     block
+                }
+            },
+            updatedAt = System.currentTimeMillis()
+        )
+        selectedBlockIdState.value = blockId
+    }
+
+    fun toggleToggleExpandedFromCanvas(blockId: String) {
+        val draft = draftState.value ?: return
+        draftState.value = draft.copy(
+            blocks = draft.blocks.map { block ->
+                if (block.id != blockId || block.type != MemoBlockType.Toggle) {
+                    block
+                } else {
+                    val toggle = block.payload as? MemoBlockPayload.Toggle ?: MemoBlockPayload.Toggle()
+                    block.copy(payload = toggle.copy(initiallyExpanded = !toggle.initiallyExpanded))
                 }
             },
             updatedAt = System.currentTimeMillis()
@@ -611,7 +902,7 @@ class EditorViewModel(
     fun saveMemo() {
         val draft = draftState.value ?: return
         if (!draft.hasContent) {
-            emitMessage("Add text, image, list, or handwriting before saving.")
+            emitMessage("Add at least one non-empty block before saving.")
             return
         }
         executeAction {
@@ -659,7 +950,7 @@ class EditorViewModel(
     fun exportGif(darkTheme: Boolean) {
         val draft = draftState.value ?: return
         if (!draft.hasContent) {
-            emitMessage("Add text, image, list, or handwriting before exporting.")
+            emitMessage("Add at least one non-empty block before exporting.")
             return
         }
         executeAction {
@@ -678,7 +969,7 @@ class EditorViewModel(
     fun exportPng(darkTheme: Boolean) {
         val draft = draftState.value ?: return
         if (!draft.hasContent) {
-            emitMessage("Add text, image, list, or handwriting before exporting.")
+            emitMessage("Add at least one non-empty block before exporting.")
             return
         }
         executeAction {
@@ -736,6 +1027,16 @@ class EditorViewModel(
         return if (paperStyle.supportsTopAlignedBlocks) 0.02f else 0.14f
     }
 
+    private fun insertBlockAndOpenEditor(draft: MemoDraft, newBlock: MemoBlock) {
+        draftState.value = draft.copy(
+            blocks = draft.blocks + newBlock,
+            updatedAt = System.currentTimeMillis()
+        )
+        selectedBlockIdState.value = newBlock.id
+        editorSheetVisibleState.value = true
+        toolPaletteVisibleState.value = false
+    }
+
     private suspend fun insertDrawingBlock(
         strokes: List<StrokeData>,
         widthFraction: Float,
@@ -790,14 +1091,14 @@ private fun MemoBlock.scaledBy(
     val minScale = buildList {
         add(MIN_BLOCK_FRACTION / safeWidth)
         add(MIN_BLOCK_FRACTION / safeHeight)
-        if (isText || isList) {
+        if (supportsTextSizing) {
             add(TextStyleSetting.MIN_FONT_SIZE / safeFontSize)
         }
     }.maxOrNull() ?: 1f
     val maxScale = buildList {
         add(MAX_BLOCK_FRACTION / safeWidth)
         add(MAX_BLOCK_FRACTION / safeHeight)
-        if (isText || isList) {
+        if (supportsTextSizing) {
             add(TextStyleSetting.MAX_FONT_SIZE / safeFontSize)
         }
     }.minOrNull() ?: 1f
@@ -805,7 +1106,7 @@ private fun MemoBlock.scaledBy(
     val scaledWidth = widthFraction * appliedScale
     val scaledHeight = heightFraction * appliedScale
 
-    val adjustedY = if (isText || isList) {
+    val adjustedY = if (supportsTextSizing) {
         val centerY = normalizedY + (heightFraction / 2f)
         (centerY - (scaledHeight / 2f)).coerceIn(minimumY, 0.9f)
     } else {
@@ -816,7 +1117,7 @@ private fun MemoBlock.scaledBy(
         normalizedY = adjustedY,
         widthFraction = scaledWidth,
         heightFraction = scaledHeight,
-        textStyle = if (isText || isList) {
+        textStyle = if (supportsTextSizing) {
             textStyle.copy(fontSize = textStyle.fontSize * appliedScale)
         } else {
             textStyle

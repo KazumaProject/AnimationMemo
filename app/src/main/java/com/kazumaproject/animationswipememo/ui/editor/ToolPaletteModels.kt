@@ -42,6 +42,15 @@ sealed class PaletteAction {
     data object AddText : PaletteAction()
     data object AddImage : PaletteAction()
     data object AddList : PaletteAction()
+    data object AddHeading : PaletteAction()
+    data object AddToggle : PaletteAction()
+    data object AddQuote : PaletteAction()
+    data object AddCode : PaletteAction()
+    data object AddDivider : PaletteAction()
+    data object AddLinkCard : PaletteAction()
+    data object AddTable : PaletteAction()
+    data object AddConversation : PaletteAction()
+    data object AddLatex : PaletteAction()
     data object OpenDrawingLibrary : PaletteAction()
     data object EditSelected : PaletteAction()
     data object ExportGif : PaletteAction()
@@ -53,6 +62,15 @@ enum class PaletteIcon {
     AddText,
     AddImage,
     AddList,
+    AddHeading,
+    AddToggle,
+    AddQuote,
+    AddCode,
+    AddDivider,
+    AddLink,
+    AddTable,
+    AddConversation,
+    AddLatex,
     Handwriting,
     Edit,
     Export,
@@ -62,10 +80,13 @@ enum class PaletteIcon {
 
 enum class PaletteGroup(val headerTitle: String, val order: Int) {
     Frequent(headerTitle = "Frequent", order = 0),
-    Insert(headerTitle = "Insert", order = 1),
-    Edit(headerTitle = "Edit", order = 2),
-    Export(headerTitle = "Export", order = 3),
-    Danger(headerTitle = "Danger", order = 4)
+    Content(headerTitle = "Content", order = 1),
+    Structure(headerTitle = "Structure", order = 2),
+    Reference(headerTitle = "Reference", order = 3),
+    Complex(headerTitle = "Complex", order = 4),
+    Edit(headerTitle = "Edit", order = 5),
+    Export(headerTitle = "Export", order = 6),
+    Danger(headerTitle = "Danger", order = 7)
 }
 
 object ToolPaletteCatalog {
@@ -75,7 +96,7 @@ object ToolPaletteCatalog {
             title = "Add text block",
             shortTitle = "Text",
             icon = PaletteIcon.AddText,
-            group = PaletteGroup.Insert,
+            group = PaletteGroup.Content,
             action = PaletteAction.AddText,
             defaultOrder = 0
         ),
@@ -84,7 +105,7 @@ object ToolPaletteCatalog {
             title = "Insert image",
             shortTitle = "Image",
             icon = PaletteIcon.AddImage,
-            group = PaletteGroup.Insert,
+            group = PaletteGroup.Content,
             action = PaletteAction.AddImage,
             defaultOrder = 1
         ),
@@ -93,7 +114,7 @@ object ToolPaletteCatalog {
             title = "Insert list",
             shortTitle = "List",
             icon = PaletteIcon.AddList,
-            group = PaletteGroup.Insert,
+            group = PaletteGroup.Complex,
             action = PaletteAction.AddList,
             defaultOrder = 2
         ),
@@ -102,9 +123,90 @@ object ToolPaletteCatalog {
             title = "Insert handwriting",
             shortTitle = "Handwriting",
             icon = PaletteIcon.Handwriting,
-            group = PaletteGroup.Insert,
+            group = PaletteGroup.Content,
             action = PaletteAction.OpenDrawingLibrary,
             defaultOrder = 3
+        ),
+        PaletteItemDefinition(
+            id = "add_heading",
+            title = "Insert heading",
+            shortTitle = "Heading",
+            icon = PaletteIcon.AddHeading,
+            group = PaletteGroup.Structure,
+            action = PaletteAction.AddHeading,
+            defaultOrder = 0
+        ),
+        PaletteItemDefinition(
+            id = "add_toggle",
+            title = "Insert toggle",
+            shortTitle = "Toggle",
+            icon = PaletteIcon.AddToggle,
+            group = PaletteGroup.Structure,
+            action = PaletteAction.AddToggle,
+            defaultOrder = 1
+        ),
+        PaletteItemDefinition(
+            id = "add_quote",
+            title = "Insert quote",
+            shortTitle = "Quote",
+            icon = PaletteIcon.AddQuote,
+            group = PaletteGroup.Content,
+            action = PaletteAction.AddQuote,
+            defaultOrder = 4
+        ),
+        PaletteItemDefinition(
+            id = "add_code",
+            title = "Insert code block",
+            shortTitle = "Code",
+            icon = PaletteIcon.AddCode,
+            group = PaletteGroup.Content,
+            action = PaletteAction.AddCode,
+            defaultOrder = 5
+        ),
+        PaletteItemDefinition(
+            id = "add_latex",
+            title = "Insert math block",
+            shortTitle = "LaTeX",
+            icon = PaletteIcon.AddLatex,
+            group = PaletteGroup.Content,
+            action = PaletteAction.AddLatex,
+            defaultOrder = 6
+        ),
+        PaletteItemDefinition(
+            id = "add_divider",
+            title = "Insert divider",
+            shortTitle = "Divider",
+            icon = PaletteIcon.AddDivider,
+            group = PaletteGroup.Structure,
+            action = PaletteAction.AddDivider,
+            defaultOrder = 2
+        ),
+        PaletteItemDefinition(
+            id = "add_link_card",
+            title = "Insert link card",
+            shortTitle = "Link",
+            icon = PaletteIcon.AddLink,
+            group = PaletteGroup.Reference,
+            action = PaletteAction.AddLinkCard,
+            defaultOrder = 0
+        ),
+        PaletteItemDefinition(
+            id = "add_table",
+            title = "Insert table",
+            shortTitle = "Table",
+            icon = PaletteIcon.AddTable,
+            group = PaletteGroup.Complex,
+            action = PaletteAction.AddTable,
+            defaultOrder = 1
+        ),
+        PaletteItemDefinition(
+            id = "add_conversation",
+            title = "Insert conversation",
+            shortTitle = "Dialog",
+            icon = PaletteIcon.AddConversation,
+            group = PaletteGroup.Complex,
+            action = PaletteAction.AddConversation,
+            defaultOrder = 2
         ),
         PaletteItemDefinition(
             id = "edit_selected",
@@ -147,6 +249,8 @@ object ToolPaletteCatalog {
     private val frequentPreset = setOf(
         PaletteAction.AddText,
         PaletteAction.AddList,
+        PaletteAction.AddHeading,
+        PaletteAction.AddQuote,
         PaletteAction.EditSelected,
         PaletteAction.ExportGif
     )

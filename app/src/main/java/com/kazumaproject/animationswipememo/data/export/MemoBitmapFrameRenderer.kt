@@ -15,6 +15,7 @@ import android.text.TextPaint
 import com.kazumaproject.animationswipememo.domain.animation.MemoAnimationEngine
 import com.kazumaproject.animationswipememo.domain.model.fitContentSize
 import com.kazumaproject.animationswipememo.domain.model.MemoBlock
+import com.kazumaproject.animationswipememo.domain.model.MemoBlockPayload
 import com.kazumaproject.animationswipememo.domain.model.MemoBlockType
 import com.kazumaproject.animationswipememo.domain.model.MemoDraft
 import com.kazumaproject.animationswipememo.domain.model.PaperPalette
@@ -25,6 +26,7 @@ import com.kazumaproject.animationswipememo.domain.model.resolvedContentAspectRa
 import com.kazumaproject.animationswipememo.domain.usecase.ListBlockRenderUseCase
 import com.kazumaproject.animationswipememo.platform.decodeSampledBitmap
 import com.kazumaproject.animationswipememo.platform.toStyledTypeface
+import com.kazumaproject.animationswipememo.ui.components.render.KatexBitmapRenderer
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -33,6 +35,7 @@ class MemoBitmapFrameRenderer(
 ) {
     private val imageCache = mutableMapOf<String, Bitmap?>()
     private val listRenderUseCase = ListBlockRenderUseCase()
+    private val katexBitmapRenderer = KatexBitmapRenderer()
 
     fun renderFrame(
         memo: MemoDraft,
@@ -81,6 +84,16 @@ class MemoBitmapFrameRenderer(
                 MemoBlockType.Image -> drawImageBlock(canvas, cardRect, block, progress)
                 MemoBlockType.Drawing -> drawDrawingBlock(canvas, cardRect, block, progress)
                 MemoBlockType.List -> drawListBlock(canvas, cardRect, block, progress, darkTheme)
+                MemoBlockType.Divider -> drawDividerBlock(canvas, cardRect, block, progress, darkTheme)
+                MemoBlockType.Heading,
+                MemoBlockType.Toggle,
+                MemoBlockType.Quote,
+                MemoBlockType.Code,
+                MemoBlockType.LinkCard,
+                MemoBlockType.Table,
+                MemoBlockType.Conversation,
+                MemoBlockType.Latex,
+                MemoBlockType.Unknown -> drawPayloadTextBlock(canvas, cardRect, block, progress, darkTheme)
             }
         }
 
@@ -302,6 +315,92 @@ class MemoBitmapFrameRenderer(
             }
         }
         canvas.restore()
+    }
+
+    private fun drawDividerBlock(
+        canvas: Canvas,
+        cardRect: RectF,
+        block: MemoBlock,
+        progress: Float,
+        darkTheme: Boolean
+    ) {
+        val frame = MemoAnimationEngine.frameAt(block.animationStyle, "", progress)
+        val color = if (darkTheme) 0x66FFFFFF else 0x662D241C
+        val cx = cardRect.left + block.normalizedX.coerceIn(0.08f, 0.92f) * cardRect.width()
+        val y = cardRect.top + block.normalizedY.coerceIn(0.1f, 0.9f) * cardRect.height()
+        val width = (cardRect.width() * block.widthFraction).coerceAtLeast(cardRect.width() * 0.18f)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = color.toInt()
+            strokeWidth = max(1f, cardRect.width() * 0.003f)
+            alpha = (frame.alpha.coerceIn(0f, 1f) * 255f).toInt()
+        }
+        canvas.save()
+        canvas.translate(frame.offsetXPx, frame.offsetYPx)
+        canvas.scale(frame.scale, frame.scale, cx, y)
+        canvas.rotate(frame.rotationDeg, cx, y)
+        canvas.drawLine(cx - (width / 2f), y, cx + (width / 2f), y, paint)
+        canvas.restore()
+    }
+
+    private fun drawPayloadTextBlock(
+        canvas: Canvas,
+        cardRect: RectF,
+        block: MemoBlock,
+        progress: Float,
+        darkTheme: Boolean
+    ) {
+        val latexPayload = block.payload as? MemoBlockPayload.Latex
+        if (latexPayload != null && latexPayload.expression.isNotBlank()) {
+            val widthPx = (cardRect.width() * block.widthFraction).toInt().coerceAtLeast(120)
+            val heightPx = (cardRect.height() * block.heightFraction).toInt().coerceAtLeast(80)
+            val bitmap = katexBitmapRenderer.render(
+                context = context,
+                expression = latexPayload.expression,
+                widthPx = widthPx,
+                heightPx = heightPx,
+                darkTheme = darkTheme
+            )
+            if (bitmap != null) {
+                val cx = cardRect.left + block.normalizedX.coerceIn(0.08f, 0.92f) * cardRect.width()
+                val cy = cardRect.top + block.normalizedY.coerceIn(0.1f, 0.9f) * cardRect.height()
+                val frame = MemoAnimationEngine.frameAt(block.animationStyle, "", progress)
+                val dst = RectF(
+                    -widthPx / 2f,
+                    -heightPx / 2f,
+                    widthPx / 2f,
+                    heightPx / 2f
+                )
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    alpha = (frame.alpha.coerceIn(0f, 1f) * 255f).toInt()
+                }
+                canvas.save()
+                canvas.translate(cx + frame.offsetXPx, cy + frame.offsetYPx)
+                canvas.scale(frame.scale, frame.scale)
+                canvas.rotate(frame.rotationDeg)
+                canvas.drawBitmap(bitmap, null, dst, paint)
+                canvas.restore()
+                return
+            }
+        }
+
+        val text = when (val payload = block.payload) {
+            is MemoBlockPayload.Heading -> payload.text
+            is MemoBlockPayload.Toggle -> payload.title
+            is MemoBlockPayload.Quote -> payload.text
+            is MemoBlockPayload.Code -> payload.code
+            is MemoBlockPayload.LinkCard -> payload.title.ifBlank { payload.url }
+            is MemoBlockPayload.Table -> "${payload.rows.size} rows"
+            is MemoBlockPayload.Conversation -> "${payload.items.size} lines"
+            is MemoBlockPayload.Latex -> payload.expression
+            else -> block.text
+        }.ifBlank { block.type.name }
+        drawTextBlock(
+            canvas = canvas,
+            cardRect = cardRect,
+            block = block.copy(text = text),
+            progress = progress,
+            darkTheme = darkTheme
+        )
     }
 
     private fun loadBitmap(
