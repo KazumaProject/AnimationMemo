@@ -61,11 +61,7 @@ import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -281,6 +277,7 @@ fun EditorScreen(
                 onUpdateToggleChildText = viewModel::updateToggleChildText,
                 onRemoveToggleChild = viewModel::removeToggleChild,
                 onCodeLanguageChange = viewModel::updateCodeLanguage,
+                recentCodeLanguages = uiState.settings.recentCodeLanguages,
                 onUpdateLinkCard = viewModel::updateLinkCard,
                 onUpdateTableCell = viewModel::updateTableCell,
                 onAddTableRow = viewModel::addTableRow,
@@ -876,6 +873,7 @@ private fun BlockEditorSheet(
     onUpdateToggleChildText: (String, String) -> Unit,
     onRemoveToggleChild: (String) -> Unit,
     onCodeLanguageChange: (String) -> Unit,
+    recentCodeLanguages: List<String>,
     onUpdateLinkCard: (String, String, String, String, String) -> Unit,
     onUpdateTableCell: (String, Int, String) -> Unit,
     onAddTableRow: () -> Unit,
@@ -1040,6 +1038,7 @@ private fun BlockEditorSheet(
                 val code = block.payload as? MemoBlockPayload.Code ?: MemoBlockPayload.Code()
                 CodeLanguageSelector(
                     selectedLanguage = code.language,
+                    recentLanguages = recentCodeLanguages,
                     onLanguageSelected = onCodeLanguageChange
                 )
                 OutlinedTextField(
@@ -1309,59 +1308,147 @@ private fun BlockEditorSheet(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CodeLanguageSelector(
     selectedLanguage: String,
+    recentLanguages: List<String>,
     onLanguageSelected: (String) -> Unit
 ) {
     val allLanguages = remember { supportedCodeLanguages() }
-    var expanded by rememberSaveable { mutableStateOf(false) }
-    var query by rememberSaveable(selectedLanguage) {
-        mutableStateOf(selectedLanguage.ifBlank { allLanguages.firstOrNull().orEmpty() })
+    val focusManager = LocalFocusManager.current
+    var isOtherExpanded by rememberSaveable { mutableStateOf(false) }
+    var localRecentLanguages by rememberSaveable { mutableStateOf(emptyList<String>()) }
+
+    val primaryLanguages = remember(allLanguages) {
+        listOf(
+            "Kotlin",
+            "Java",
+            "Python",
+            "JavaScript",
+            "TypeScript",
+            "TSX",
+            "HTML",
+            "CSS",
+            "JSON",
+            "SQL"
+        ).filter { it in allLanguages }
     }
 
-    val filtered = remember(query, allLanguages) {
-        val normalized = query.trim()
-        if (normalized.isBlank()) {
-            allLanguages
-        } else {
-            allLanguages.filter { it.contains(normalized, ignoreCase = true) }
+    fun pushRecent(language: String) {
+        val normalized = language.trim()
+        if (normalized.isBlank()) return
+        localRecentLanguages = buildList {
+            add(normalized)
+            localRecentLanguages.forEach { existing ->
+                if (!existing.equals(normalized, ignoreCase = true)) add(existing)
+            }
+        }.take(5)
+    }
+
+    LaunchedEffect(recentLanguages) {
+        localRecentLanguages = recentLanguages
+            .mapNotNull { value -> allLanguages.firstOrNull { it.equals(value, ignoreCase = true) } }
+            .distinctBy { it.lowercase() }
+            .take(5)
+    }
+
+    LaunchedEffect(selectedLanguage) {
+        if (selectedLanguage.isNotBlank()) {
+            pushRecent(selectedLanguage)
         }
     }
 
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = !expanded }
+    val otherLanguages = remember(allLanguages, localRecentLanguages, primaryLanguages) {
+        allLanguages.filter { language ->
+            localRecentLanguages.none { it.equals(language, ignoreCase = true) } &&
+                primaryLanguages.none { it.equals(language, ignoreCase = true) }
+        }
+    }
+
+    fun onChipClick(language: String) {
+        pushRecent(language)
+        onLanguageSelected(language)
+        focusManager.clearFocus(force = true)
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        OutlinedTextField(
-            value = query,
-            onValueChange = {
-                query = it
-                expanded = true
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .menuAnchor(),
-            label = { Text("Language") },
-            singleLine = true,
-            trailingIcon = {
-                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
-            }
+        Text(
+            text = "Language",
+            style = MaterialTheme.typography.titleMedium
         )
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false }
+
+        if (localRecentLanguages.isNotEmpty()) {
+            Text(
+                text = "Recent",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                localRecentLanguages.forEach { language ->
+                    FilterChip(
+                        selected = language.equals(selectedLanguage, ignoreCase = true),
+                        onClick = { onChipClick(language) },
+                        label = { Text(language) }
+                    )
+                }
+            }
+        }
+
+        Text(
+            text = "Popular",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            filtered.forEach { language ->
-                DropdownMenuItem(
-                    text = { Text(language) },
-                    onClick = {
-                        query = language
-                        onLanguageSelected(language)
-                        expanded = false
-                    }
+            primaryLanguages.forEach { language ->
+                FilterChip(
+                    selected = language.equals(selectedLanguage, ignoreCase = true),
+                    onClick = { onChipClick(language) },
+                    label = { Text(language) }
                 )
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Other",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            TextButton(onClick = { isOtherExpanded = !isOtherExpanded }) {
+                Text(if (isOtherExpanded) "Hide" else "Show all (${otherLanguages.size})")
+            }
+        }
+
+        if (isOtherExpanded) {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                otherLanguages.forEach { language ->
+                    FilterChip(
+                        selected = language.equals(selectedLanguage, ignoreCase = true),
+                        onClick = { onChipClick(language) },
+                        label = { Text(language) }
+                    )
+                }
             }
         }
     }

@@ -529,13 +529,42 @@ class EditorViewModel(
     }
 
     fun updateCodeLanguage(language: String) {
+        var persistedLanguage = ""
         updateSelectedBlock { block ->
             val code = block.payload as? MemoBlockPayload.Code ?: return@updateSelectedBlock block
             val supported = supportedCodeLanguages()
             val normalized = supported.firstOrNull { it.equals(language.trim(), ignoreCase = true) }
                 ?: language.take(40).ifBlank { "Plain Text" }
+            persistedLanguage = normalized
             block.copy(payload = code.copy(language = normalized))
         }
+        if (persistedLanguage.isNotBlank()) {
+            val nextRecent = buildRecentCodeLanguages(
+                selectedLanguage = persistedLanguage,
+                currentRecent = uiState.value.settings.recentCodeLanguages
+            )
+            viewModelScope.launch {
+                settingsRepository.updateRecentCodeLanguages(nextRecent)
+            }
+        }
+    }
+
+    private fun buildRecentCodeLanguages(
+        selectedLanguage: String,
+        currentRecent: List<String>
+    ): List<String> {
+        val supported = supportedCodeLanguages()
+        val normalized = supported.firstOrNull { it.equals(selectedLanguage.trim(), ignoreCase = true) }
+            ?: return currentRecent.take(5)
+        return buildList {
+            add(normalized)
+            currentRecent.forEach { existing ->
+                val resolved = supported.firstOrNull { it.equals(existing, ignoreCase = true) }
+                if (resolved != null && !resolved.equals(normalized, ignoreCase = true)) {
+                    add(resolved)
+                }
+            }
+        }.distinctBy { it.lowercase() }.take(5)
     }
 
     fun updateLinkCard(

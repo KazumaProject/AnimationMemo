@@ -34,5 +34,6 @@ data class AppSettings(
     val gifQuality: GifQuality = GifQuality.Standard,
     val themeMode: ThemeMode = ThemeMode.System,
     val editorSheetOpacity: Float = 0.88f,
-    val defaultPaperStyle: PaperStyle = PaperStyle.WarmNote
+    val defaultPaperStyle: PaperStyle = PaperStyle.WarmNote,
+    val recentCodeLanguages: List<String> = emptyList()
 )
