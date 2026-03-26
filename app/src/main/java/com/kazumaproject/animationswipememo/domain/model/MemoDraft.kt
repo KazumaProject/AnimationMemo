@@ -55,7 +55,6 @@ data class MemoDraft(
 
     companion object {
         fun create(
-            defaultAnimation: AnimationStyle,
             paperStyle: PaperStyle = PaperStyle.WarmNote,
             timestamp: Long = System.currentTimeMillis()
         ): MemoDraft {
@@ -63,7 +62,7 @@ data class MemoDraft(
                 id = UUID.randomUUID().toString(),
                 title = "",
                 paperStyle = paperStyle,
-                blocks = listOf(MemoBlock.createText(defaultAnimation = defaultAnimation)),
+                blocks = emptyList(),
                 createdAt = timestamp,
                 updatedAt = timestamp
             )

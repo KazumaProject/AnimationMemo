@@ -118,13 +118,12 @@ class EditorViewModel(
             val settings = settingsRepository.settings.first()
             val loadedMemo = memoId?.let { memoRepository.getMemoById(it) }
             val draft = loadedMemo ?: MemoDraft.create(
-                defaultAnimation = settings.defaultAnimation,
                 paperStyle = settings.defaultPaperStyle
             )
             existingMemoState.value = loadedMemo != null
             draftState.value = draft
             selectedBlockIdState.value = draft.blocks.firstOrNull()?.id
-            editorSheetVisibleState.value = loadedMemo == null
+            editorSheetVisibleState.value = false
             loadingState.value = false
         }
     }
@@ -389,15 +388,13 @@ class EditorViewModel(
         val draft = draftState.value ?: return
         val selectedId = selectedBlockIdState.value ?: return
         val remaining = draft.blocks.filterNot { it.id == selectedId }
-        val fallback = remaining.ifEmpty {
-            listOf(MemoBlock.createText(defaultAnimation = uiState.value.settings.defaultAnimation))
-        }
+        val shouldKeepEditorOpen = editorSheetVisibleState.value && remaining.isNotEmpty()
         draftState.value = draft.copy(
-            blocks = fallback,
+            blocks = remaining,
             updatedAt = System.currentTimeMillis()
         )
-        selectedBlockIdState.value = fallback.firstOrNull()?.id
-        editorSheetVisibleState.value = fallback.size == 1 && fallback.first().text.isBlank()
+        selectedBlockIdState.value = remaining.firstOrNull()?.id
+        editorSheetVisibleState.value = shouldKeepEditorOpen
     }
 
     fun saveMemo() {
@@ -421,13 +418,12 @@ class EditorViewModel(
                 memoRepository.deleteMemo(draft.id)
             }
             val freshDraft = MemoDraft.create(
-                defaultAnimation = uiState.value.settings.defaultAnimation,
                 paperStyle = uiState.value.settings.defaultPaperStyle
             )
             draftState.value = freshDraft
             existingMemoState.value = false
             selectedBlockIdState.value = freshDraft.blocks.firstOrNull()?.id
-            editorSheetVisibleState.value = true
+            editorSheetVisibleState.value = false
             drawingLibraryVisibleState.value = false
             drawingEditorVisibleState.value = false
             effects.emit(EditorEffect.PerformHaptic)
@@ -437,13 +433,12 @@ class EditorViewModel(
 
     fun createNewMemo() {
         val freshDraft = MemoDraft.create(
-            defaultAnimation = uiState.value.settings.defaultAnimation,
             paperStyle = uiState.value.settings.defaultPaperStyle
         )
         draftState.value = freshDraft
         existingMemoState.value = false
         selectedBlockIdState.value = freshDraft.blocks.firstOrNull()?.id
-        editorSheetVisibleState.value = true
+        editorSheetVisibleState.value = false
         drawingLibraryVisibleState.value = false
         drawingEditorVisibleState.value = false
     }
