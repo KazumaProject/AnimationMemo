@@ -32,6 +32,8 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -87,7 +89,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -99,6 +100,8 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kazumaproject.animationswipememo.domain.model.AnimationStyle
 import com.kazumaproject.animationswipememo.domain.model.ConversationRole
@@ -364,19 +367,21 @@ fun EditorScreen(
             .pointerInput(
                 uiState.selectedBlockId,
                 uiState.isEditorSheetVisible,
+                uiState.isCodeFullscreenVisible,
                 uiState.isFabExpanded,
                 uiState.isToolPaletteVisible,
                 uiState.isDrawingLibraryVisible,
                 uiState.isDrawingEditorVisible
             ) {
                 awaitEachGesture {
-                    val down = awaitFirstDown(
+                    awaitFirstDown(
                         requireUnconsumed = false,
                         pass = PointerEventPass.Initial
                     )
                     val up = waitForUpOrCancellation(pass = PointerEventPass.Final)
                     if (up != null && !up.isConsumed) {
                         if (
+                            uiState.isCodeFullscreenVisible ||
                             uiState.isFabExpanded ||
                             uiState.isToolPaletteVisible ||
                             uiState.isDrawingLibraryVisible ||
@@ -509,8 +514,23 @@ fun EditorScreen(
                     onToggleListItemCheckedOnCanvas = viewModel::toggleListItemCheckedFromCanvas,
                     onToggleListItemExpandedOnCanvas = viewModel::toggleListItemExpandedFromCanvas,
                     onToggleBlockExpandedOnCanvas = viewModel::toggleToggleExpandedFromCanvas,
+                    onCodeBlockLongPress = { blockId ->
+                        dismissTransientInput()
+                        viewModel.openCodeFullscreen(blockId)
+                    }
                 )
             }
+        }
+
+        val fullscreenCodeBlock = uiState.codeFullscreenBlock
+        if (uiState.isCodeFullscreenVisible && fullscreenCodeBlock?.type == MemoBlockType.Code) {
+            FullscreenCodeEditorDialog(
+                block = fullscreenCodeBlock,
+                onClose = {
+                    dismissTransientInput()
+                    viewModel.closeCodeFullscreen()
+                }
+            )
         }
 
         if (uiState.isDrawingEditorVisible) {
@@ -543,7 +563,8 @@ private fun EditorCanvasContent(
     onBlockScale: (String, Float) -> Unit,
     onToggleListItemCheckedOnCanvas: (String, String) -> Unit,
     onToggleListItemExpandedOnCanvas: (String, String) -> Unit,
-    onToggleBlockExpandedOnCanvas: (String) -> Unit
+    onToggleBlockExpandedOnCanvas: (String) -> Unit,
+    onCodeBlockLongPress: (String) -> Unit
 ) {
     val draft = uiState.draft ?: return
     val transition = rememberInfiniteTransition(label = "canvasAnimation")
@@ -580,8 +601,115 @@ private fun EditorCanvasContent(
             onBlockScale = onBlockScale,
             onToggleListItemChecked = onToggleListItemCheckedOnCanvas,
             onToggleListItemExpanded = onToggleListItemExpandedOnCanvas,
-            onToggleBlockExpanded = onToggleBlockExpandedOnCanvas
+            onToggleBlockExpanded = onToggleBlockExpandedOnCanvas,
+            onCodeBlockLongPress = onCodeBlockLongPress
         )
+    }
+}
+
+@Composable
+private fun FullscreenCodeEditorDialog(
+    block: com.kazumaproject.animationswipememo.domain.model.MemoBlock,
+    onClose: () -> Unit
+) {
+    val code = block.payload as? MemoBlockPayload.Code ?: MemoBlockPayload.Code()
+    val codeText = code.code.ifBlank { "// Empty code block" }
+    val codeLines = remember(codeText) { codeText.split('\n') }
+    val verticalScrollState = rememberScrollState()
+    val horizontalScrollState = rememberScrollState()
+    val lineNumberGutterWidth = remember(codeLines.size) {
+        when (codeLines.size.toString().length) {
+            1 -> 40.dp
+            2 -> 52.dp
+            3 -> 60.dp
+            4 -> 68.dp
+            else -> 76.dp
+        }
+    }
+    Dialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding(),
+            color = MaterialTheme.colorScheme.surface
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Code editor",
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                    TextButton(onClick = onClose) {
+                        Text("Done")
+                    }
+                }
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 12.dp, vertical = 10.dp)
+                            .horizontalScroll(horizontalScrollState)
+                            .verticalScroll(verticalScrollState)
+                    ) {
+                        Column {
+                            codeLines.forEachIndexed { index, line ->
+                            Row(
+                                modifier = Modifier,
+                                verticalAlignment = Alignment.Top
+                            ) {
+                                Text(
+                                    text = (index + 1).toString(),
+                                    modifier = Modifier
+                                        .width(lineNumberGutterWidth)
+                                        .padding(end = 6.dp),
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.End
+                                    ),
+                                    softWrap = false,
+                                    overflow = TextOverflow.Clip
+                                )
+                                Text(
+                                    text = highlightCode(
+                                        language = code.language,
+                                        code = line.ifEmpty { " " },
+                                        defaultColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                    ),
+                                    modifier = Modifier
+                                        .padding(start = 10.dp),
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    ),
+                                    softWrap = false,
+                                    overflow = TextOverflow.Clip
+                                )
+                            }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

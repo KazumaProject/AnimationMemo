@@ -11,20 +11,24 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.CheckBox
+import androidx.compose.material.icons.outlined.CheckBoxOutlineBlank
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.Surface
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -38,7 +42,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -52,39 +55,31 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.Density
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.KeyboardArrowDown
-import androidx.compose.material.icons.outlined.CheckBox
-import androidx.compose.material.icons.outlined.CheckBoxOutlineBlank
 import com.kazumaproject.animationswipememo.domain.animation.MemoAnimationEngine
-import com.kazumaproject.animationswipememo.domain.model.fitContentSize
 import com.kazumaproject.animationswipememo.domain.model.MemoBlock
 import com.kazumaproject.animationswipememo.domain.model.MemoBlockPayload
 import com.kazumaproject.animationswipememo.domain.model.MemoBlockType
 import com.kazumaproject.animationswipememo.domain.model.MemoDraft
 import com.kazumaproject.animationswipememo.domain.model.MemoTextAlign
+import com.kazumaproject.animationswipememo.domain.model.fitContentSize
 import com.kazumaproject.animationswipememo.domain.model.resolvedContentAspectRatio
 import com.kazumaproject.animationswipememo.domain.usecase.ListBlockRenderUseCase
-import com.kazumaproject.animationswipememo.ui.components.render.highlightCode
-import com.kazumaproject.animationswipememo.ui.components.render.KatexBlockView
-import com.kazumaproject.animationswipememo.platform.decodeSampledBitmap
 import com.kazumaproject.animationswipememo.platform.composeFontStyle
 import com.kazumaproject.animationswipememo.platform.composeFontWeight
 import com.kazumaproject.animationswipememo.platform.composeTextDecoration
+import com.kazumaproject.animationswipememo.platform.decodeSampledBitmap
 import com.kazumaproject.animationswipememo.platform.toComposeFontFamily
+import com.kazumaproject.animationswipememo.ui.components.render.KatexBlockView
+import com.kazumaproject.animationswipememo.ui.components.render.highlightCode
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.max
@@ -104,7 +99,8 @@ fun PaperMemoCanvas(
     onBlockScale: (String, Float) -> Unit,
     onToggleListItemChecked: (String, String) -> Unit,
     onToggleListItemExpanded: (String, String) -> Unit,
-    onToggleBlockExpanded: (String) -> Unit
+    onToggleBlockExpanded: (String) -> Unit,
+    onCodeBlockLongPress: (String) -> Unit
 ) {
     val density = LocalDensity.current
     val paper = memo.paperStyle.palette(darkTheme)
@@ -261,7 +257,8 @@ fun PaperMemoCanvas(
                     canvasHeightPx = canvasHeightPx,
                     onBlockDragStart = onBlockDragStart,
                     onBlockDrag = onBlockDrag,
-                    onBlockScale = onBlockScale
+                    onBlockScale = onBlockScale,
+                    onCodeBlockLongPress = onCodeBlockLongPress
                 )
 
                 MemoBlockType.Toggle -> ToggleBlockView(
@@ -663,7 +660,8 @@ private fun PayloadTextBlockView(
     canvasHeightPx: Int,
     onBlockDragStart: (String) -> Unit,
     onBlockDrag: (String, Float, Float) -> Unit,
-    onBlockScale: (String, Float) -> Unit
+    onBlockScale: (String, Float) -> Unit,
+    onCodeBlockLongPress: (String) -> Unit
 ) {
     val payloadText = when (val payload = block.payload) {
         is MemoBlockPayload.Heading -> payload.text.ifBlank { "Heading" }
@@ -705,6 +703,11 @@ private fun PayloadTextBlockView(
         onBlockDragStart = onBlockDragStart,
         onBlockDrag = onBlockDrag,
         onBlockScale = onBlockScale,
+        onLongPress = if (block.type == MemoBlockType.Code) {
+            { onCodeBlockLongPress(block.id) }
+        } else {
+            null
+        },
         content = {
             if (block.payload is MemoBlockPayload.Latex) {
                 KatexBlockView(
@@ -866,6 +869,7 @@ private fun TextBlockLike(
     onBlockDragStart: (String) -> Unit,
     onBlockDrag: (String, Float, Float) -> Unit,
     onBlockScale: (String, Float) -> Unit,
+    onLongPress: (() -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
     val density = LocalDensity.current
@@ -887,7 +891,8 @@ private fun TextBlockLike(
             widthModifier = Modifier.width(blockWidthDp).defaultMinSize(minHeight = minHeightDp),
             onBlockDragStart = onBlockDragStart,
             onBlockDrag = onBlockDrag,
-            onBlockScale = onBlockScale
+            onBlockScale = onBlockScale,
+            onLongPress = onLongPress
         )
     ) {
         Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp)) {
@@ -907,7 +912,8 @@ private fun blockGestureModifier(
     widthModifier: Modifier,
     onBlockDragStart: (String) -> Unit,
     onBlockDrag: (String, Float, Float) -> Unit,
-    onBlockScale: (String, Float) -> Unit
+    onBlockScale: (String, Float) -> Unit,
+    onLongPress: (() -> Unit)? = null
 ): Modifier {
     return Modifier
         .then(widthModifier)
@@ -928,13 +934,44 @@ private fun blockGestureModifier(
                 var dragStarted = false
                 var transformStarted = false
                 var accumulatedDrag = Offset.Zero
+                var latestEventUptime = down.uptimeMillis
+                val longPressDeadline = down.uptimeMillis + CODE_BLOCK_LONG_PRESS_TIMEOUT_MS
 
                 while (true) {
-                    val event = awaitPointerEvent()
+                    val longPressTimeout = if (
+                        onLongPress != null &&
+                        !dragStarted &&
+                        !transformStarted
+                    ) {
+                        (longPressDeadline - latestEventUptime).coerceAtLeast(0L)
+                    } else {
+                        Long.MAX_VALUE
+                    }
+                    val event = if (longPressTimeout == Long.MAX_VALUE) {
+                        awaitPointerEvent()
+                    } else {
+                        withTimeoutOrNull(longPressTimeout) { awaitPointerEvent() }
+                    }
+                    if (event == null) {
+                        onLongPress?.invoke()
+                        while (true) {
+                            val releaseEvent = awaitPointerEvent()
+                            releaseEvent.changes.forEach { change ->
+                                if (change.positionChange() != Offset.Zero || !change.pressed) {
+                                    change.consume()
+                                }
+                            }
+                            if (releaseEvent.changes.none { it.pressed }) {
+                                break
+                            }
+                        }
+                        break
+                    }
                     val pressedChanges = event.changes.filter { it.pressed }
                     if (pressedChanges.isEmpty()) {
                         break
                     }
+                    latestEventUptime = event.changes.maxOf { it.uptimeMillis }
 
                     if (!transformStarted && !dragStarted && pressedChanges.size >= 2) {
                         transformStarted = true
@@ -1214,5 +1251,6 @@ private fun textStyleFor(
     )
 }
 
+private const val CODE_BLOCK_LONG_PRESS_TIMEOUT_MS = 450L
 private const val PAPER_MEMO_CANVAS_TAG = "PaperMemoCanvas"
 

@@ -63,6 +63,7 @@ class EditorViewModel(
     private val fabExpandedState = MutableStateFlow(true)
     private val drawingLibraryVisibleState = MutableStateFlow(false)
     private val drawingEditorVisibleState = MutableStateFlow(false)
+    private val codeFullscreenBlockIdState = MutableStateFlow<String?>(null)
     private val effects = MutableSharedFlow<EditorEffect>()
 
     val uiState: StateFlow<EditorUiState> = combine(
@@ -83,19 +84,25 @@ class EditorViewModel(
                 )
             },
             combine(
-                toolPaletteVisibleState,
-                fabVisibleState,
-                fabExpandedState,
-                drawingLibraryVisibleState,
-                drawingEditorVisibleState
-            ) { isToolPaletteVisible, isFabVisible, isFabExpanded, isDrawingLibraryVisible, isDrawingEditorVisible ->
-                PartialEditorVisibility(
-                    isToolPaletteVisible = isToolPaletteVisible,
-                    isFabVisible = isFabVisible,
-                    isFabExpanded = isFabExpanded,
-                    isDrawingLibraryVisible = isDrawingLibraryVisible,
-                    isDrawingEditorVisible = isDrawingEditorVisible
-                )
+                combine(
+                    toolPaletteVisibleState,
+                    fabVisibleState,
+                    fabExpandedState,
+                    drawingLibraryVisibleState,
+                    drawingEditorVisibleState
+                ) { isToolPaletteVisible, isFabVisible, isFabExpanded, isDrawingLibraryVisible, isDrawingEditorVisible ->
+                    PartialEditorVisibility(
+                        isToolPaletteVisible = isToolPaletteVisible,
+                        isFabVisible = isFabVisible,
+                        isFabExpanded = isFabExpanded,
+                        isDrawingLibraryVisible = isDrawingLibraryVisible,
+                        isDrawingEditorVisible = isDrawingEditorVisible,
+                        codeFullscreenBlockId = null
+                    )
+                },
+                codeFullscreenBlockIdState
+            ) { visibility, codeFullscreenBlockId ->
+                visibility.copy(codeFullscreenBlockId = codeFullscreenBlockId)
             }
         ) { partialA, visibility ->
             PartialEditorUiStateB(
@@ -108,7 +115,8 @@ class EditorViewModel(
                 isFabVisible = visibility.isFabVisible,
                 isFabExpanded = visibility.isFabExpanded,
                 isDrawingLibraryVisible = visibility.isDrawingLibraryVisible,
-                isDrawingEditorVisible = visibility.isDrawingEditorVisible
+                isDrawingEditorVisible = visibility.isDrawingEditorVisible,
+                codeFullscreenBlockId = visibility.codeFullscreenBlockId
             )
         },
         loadingState,
@@ -126,6 +134,7 @@ class EditorViewModel(
             isFabExpanded = partial.isFabExpanded,
             isDrawingLibraryVisible = partial.isDrawingLibraryVisible,
             isDrawingEditorVisible = partial.isDrawingEditorVisible,
+            codeFullscreenBlockId = partial.codeFullscreenBlockId,
             isLoading = isLoading,
             isWorking = isWorking,
             isExistingMemo = isExisting
@@ -302,6 +311,7 @@ class EditorViewModel(
             "openBlockEditor start: blockId=$blockId, exists=$exists, selectedBefore=${selectedBlockIdState.value}, sheetVisibleBefore=${editorSheetVisibleState.value}"
         )
         selectedBlockIdState.value = blockId
+        closeCodeFullscreen()
         editorSheetVisibleState.value = true
         toolPaletteVisibleState.value = false
         Log.d(
@@ -312,11 +322,13 @@ class EditorViewModel(
 
     fun startBlockDrag(blockId: String) {
         selectedBlockIdState.value = blockId
+        closeCodeFullscreen()
         editorSheetVisibleState.value = false
     }
 
     fun clearSelection() {
         selectedBlockIdState.value = null
+        closeCodeFullscreen()
     }
 
     fun toggleToolPaletteVisibility() {
@@ -349,6 +361,7 @@ class EditorViewModel(
         editorSheetVisibleState.value = false
         drawingLibraryVisibleState.value = false
         drawingEditorVisibleState.value = false
+        codeFullscreenBlockIdState.value = null
     }
 
     fun hideToolPalette() {
@@ -360,6 +373,7 @@ class EditorViewModel(
         drawingEditorVisibleState.value = false
         editorSheetVisibleState.value = false
         toolPaletteVisibleState.value = false
+        codeFullscreenBlockIdState.value = null
     }
 
     fun closeDrawingLibrary() {
@@ -372,6 +386,7 @@ class EditorViewModel(
         drawingEditorVisibleState.value = true
         editorSheetVisibleState.value = false
         toolPaletteVisibleState.value = false
+        codeFullscreenBlockIdState.value = null
     }
 
     fun closeDrawingEditor() {
@@ -431,6 +446,7 @@ class EditorViewModel(
     }
 
     fun showEditorSheet() {
+        closeCodeFullscreen()
         if (selectedBlockIdState.value == null) {
             Log.d(EDITOR_VIEW_MODEL_TAG, "showEditorSheet: skipped because selectedBlockId is null")
             emitMessage("Select a block first.")
@@ -472,9 +488,26 @@ class EditorViewModel(
         fabExpandedState.value = false
     }
 
+    fun openCodeFullscreen(blockId: String) {
+        val block = draftState.value?.blocks?.firstOrNull { it.id == blockId } ?: return
+        if (block.type != MemoBlockType.Code) return
+        selectedBlockIdState.value = blockId
+        editorSheetVisibleState.value = false
+        toolPaletteVisibleState.value = false
+        fabExpandedState.value = false
+        drawingLibraryVisibleState.value = false
+        drawingEditorVisibleState.value = false
+        codeFullscreenBlockIdState.value = blockId
+    }
+
+    fun closeCodeFullscreen() {
+        codeFullscreenBlockIdState.value = null
+    }
+
     fun updateSelectedBlockText(text: String) {
         updateSelectedBlock { block ->
-            val sanitized = text.take(400)
+            val maxLength = if (block.payload is MemoBlockPayload.Code) 4_000 else 400
+            val sanitized = text.take(maxLength)
             val nextPayload = when (val payload = block.payload) {
                 is MemoBlockPayload.Heading -> payload.copy(text = sanitized)
                 is MemoBlockPayload.Quote -> payload.copy(text = sanitized)
@@ -966,6 +999,7 @@ class EditorViewModel(
             editorSheetVisibleState.value = false
             drawingLibraryVisibleState.value = false
             drawingEditorVisibleState.value = false
+            codeFullscreenBlockIdState.value = null
             effects.emit(EditorEffect.PerformHaptic)
             effects.emit(EditorEffect.ShowMessage("Memo discarded."))
         }
@@ -983,6 +1017,7 @@ class EditorViewModel(
         fabExpandedState.value = false
         drawingLibraryVisibleState.value = false
         drawingEditorVisibleState.value = false
+        codeFullscreenBlockIdState.value = null
     }
 
     fun exportGif(darkTheme: Boolean) {
@@ -1184,7 +1219,8 @@ private data class PartialEditorUiStateB(
     val isFabVisible: Boolean,
     val isFabExpanded: Boolean,
     val isDrawingLibraryVisible: Boolean,
-    val isDrawingEditorVisible: Boolean
+    val isDrawingEditorVisible: Boolean,
+    val codeFullscreenBlockId: String?
 )
 
 private data class PartialEditorVisibility(
@@ -1192,7 +1228,8 @@ private data class PartialEditorVisibility(
     val isFabVisible: Boolean,
     val isFabExpanded: Boolean,
     val isDrawingLibraryVisible: Boolean,
-    val isDrawingEditorVisible: Boolean
+    val isDrawingEditorVisible: Boolean,
+    val codeFullscreenBlockId: String?
 )
 
 private const val EDITOR_VIEW_MODEL_TAG = "EditorViewModel"
