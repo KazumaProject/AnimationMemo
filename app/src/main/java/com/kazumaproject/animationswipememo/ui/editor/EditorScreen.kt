@@ -289,6 +289,8 @@ fun EditorScreen(
                 onRemoveTableRow = viewModel::removeTableRow,
                 onAddTableColumn = viewModel::addTableColumn,
                 onRemoveTableColumn = viewModel::removeTableColumn,
+                onUpdateTableHeaderRow = viewModel::updateTableHasHeaderRow,
+                onUpdateTableHeaderColumn = viewModel::updateTableHasHeaderColumn,
                 onAddConversationItem = viewModel::addConversationItem,
                 onUpdateConversationItem = viewModel::updateConversationItem,
                 onRemoveConversationItem = viewModel::removeConversationItem,
@@ -1031,6 +1033,8 @@ private fun BlockEditorSheet(
     onRemoveTableRow: (String) -> Unit,
     onAddTableColumn: () -> Unit,
     onRemoveTableColumn: (Int) -> Unit,
+    onUpdateTableHeaderRow: (Boolean) -> Unit,
+    onUpdateTableHeaderColumn: (Boolean) -> Unit,
     onAddConversationItem: () -> Unit,
     onUpdateConversationItem: (String, String, String, ConversationRole) -> Unit,
     onRemoveConversationItem: (String) -> Unit,
@@ -1287,6 +1291,20 @@ private fun BlockEditorSheet(
 
             MemoBlockType.Table -> {
                 val table = block.payload as? MemoBlockPayload.Table ?: MemoBlockPayload.Table()
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Header row")
+                    Switch(
+                        checked = table.hasHeaderRow,
+                        onCheckedChange = onUpdateTableHeaderRow
+                    )
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Header column")
+                    Switch(
+                        checked = table.hasHeaderColumn,
+                        onCheckedChange = onUpdateTableHeaderColumn
+                    )
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = onAddTableRow) { Text("Add row") }
                     TextButton(onClick = onAddTableColumn) { Text("Add column") }

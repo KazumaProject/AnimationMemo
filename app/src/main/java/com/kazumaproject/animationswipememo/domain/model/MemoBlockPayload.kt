@@ -69,7 +69,9 @@ sealed interface MemoBlockPayload {
         val rows: List<TableRow> = listOf(
             TableRow(cells = listOf("", "")),
             TableRow(cells = listOf("", ""))
-        )
+        ),
+        val hasHeaderRow: Boolean = false,
+        val hasHeaderColumn: Boolean = false
     ) : MemoBlockPayload
 
     data class Conversation(

@@ -283,7 +283,9 @@ private fun legacyPayloadFor(
                         }
                     }
                 }
-            }
+            },
+            hasHeaderRow = false,
+            hasHeaderColumn = false
         )
 
         MemoBlockType.Conversation -> MemoBlockPayload.Conversation(

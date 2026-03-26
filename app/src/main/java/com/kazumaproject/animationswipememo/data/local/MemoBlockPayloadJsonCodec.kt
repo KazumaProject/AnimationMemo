@@ -76,6 +76,8 @@ internal object MemoBlockPayloadJsonCodec {
             is MemoBlockPayload.Table -> JSONObject().apply {
                 put("kind", "table")
                 put("version", PAYLOAD_VERSION)
+                put("hasHeaderRow", payload.hasHeaderRow)
+                put("hasHeaderColumn", payload.hasHeaderColumn)
                 put("rows", JSONArray().apply {
                     payload.rows.forEach { row ->
                         put(
@@ -156,7 +158,9 @@ internal object MemoBlockPayloadJsonCodec {
                 )
 
                 "table" -> MemoBlockPayload.Table(
-                    rows = decodeRows(payloadJson.optJSONArray("rows"))
+                    rows = decodeRows(payloadJson.optJSONArray("rows")),
+                    hasHeaderRow = payloadJson.optBoolean("hasHeaderRow", false),
+                    hasHeaderColumn = payloadJson.optBoolean("hasHeaderColumn", false)
                 )
 
                 "conversation" -> MemoBlockPayload.Conversation(

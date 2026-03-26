@@ -793,6 +793,20 @@ class EditorViewModel(
         }
     }
 
+    fun updateTableHasHeaderRow(enabled: Boolean) {
+        updateSelectedBlock { block ->
+            val table = block.payload as? MemoBlockPayload.Table ?: return@updateSelectedBlock block
+            block.copy(payload = table.copy(hasHeaderRow = enabled))
+        }
+    }
+
+    fun updateTableHasHeaderColumn(enabled: Boolean) {
+        updateSelectedBlock { block ->
+            val table = block.payload as? MemoBlockPayload.Table ?: return@updateSelectedBlock block
+            block.copy(payload = table.copy(hasHeaderColumn = enabled))
+        }
+    }
+
     fun addConversationItem() {
         updateSelectedBlock { block ->
             val conversation = block.payload as? MemoBlockPayload.Conversation ?: return@updateSelectedBlock block
