@@ -72,6 +72,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.kazumaproject.animationswipememo.domain.model.ListItemType
 import com.kazumaproject.animationswipememo.domain.model.MemoBlock
 import com.kazumaproject.animationswipememo.domain.model.MemoBlockType
 import com.kazumaproject.animationswipememo.domain.model.MemoDraft
@@ -410,8 +411,43 @@ private fun MemoThumbnail(
 
                 MemoBlockType.Image -> ThumbnailImageBlock(block = block)
                 MemoBlockType.Drawing -> ThumbnailDrawingBlock(block = block)
+                MemoBlockType.List -> ThumbnailListBlock(block = block, darkTheme = darkTheme)
             }
         }
+    }
+}
+
+@Composable
+private fun ThumbnailListBlock(
+    block: MemoBlock,
+    darkTheme: Boolean
+) {
+    val preview = block.listItems
+        .take(3)
+        .mapIndexed { index, item ->
+            val marker = when (item.itemType) {
+                ListItemType.ORDERED -> "${index + 1}."
+                ListItemType.UNORDERED -> "•"
+                ListItemType.CHECKBOX -> if (item.checked) "☑" else "☐"
+            }
+            "$marker ${item.text.ifBlank { "..." }}"
+        }
+        .joinToString("\n")
+    Box(modifier = Modifier.fillMaxSize()) {
+        Text(
+            text = preview.ifBlank { "• ..." },
+            modifier = Modifier
+                .width((block.widthFraction * 112f).dp)
+                .offset(
+                    x = ((block.normalizedX * 112f) - (block.widthFraction * 56f)).dp,
+                    y = ((block.normalizedY * 148f) - 14f).dp
+                ),
+            fontSize = (block.textStyle.fontSize * 0.22f).sp,
+            lineHeight = (block.textStyle.fontSize * 0.26f).sp,
+            color = Color(block.textStyle.resolvedTextColor(darkTheme)),
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 

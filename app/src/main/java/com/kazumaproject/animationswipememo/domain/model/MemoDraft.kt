@@ -17,15 +17,34 @@ data class MemoDraft(
         get() = listOfNotNull(
             title.trim().takeIf(String::isNotBlank),
             blocks
-                .filter { it.type == MemoBlockType.Text }
+                .filter { it.type == MemoBlockType.Text || it.type == MemoBlockType.List }
                 .mapNotNull { it.text.trim().takeIf(String::isNotBlank) }
+                .plus(
+                    blocks
+                        .filter { it.type == MemoBlockType.List }
+                        .flatMap { block -> block.listItems }
+                        .mapNotNull { item -> item.text.trim().takeIf(String::isNotBlank) }
+                )
                 .joinToString(" ")
                 .takeIf(String::isNotBlank)
         )
             .joinToString(" ")
 
     val previewText: String
-        get() = blocks.firstOrNull { it.type == MemoBlockType.Text && it.text.isNotBlank() }?.text
+        get() = blocks.firstOrNull {
+            when (it.type) {
+                MemoBlockType.Text -> it.text.isNotBlank()
+                MemoBlockType.List -> it.listItems.any { item -> item.text.isNotBlank() }
+                MemoBlockType.Image,
+                MemoBlockType.Drawing -> false
+            }
+        }?.let {
+            if (it.type == MemoBlockType.List) {
+                it.listItems.firstOrNull { item -> item.text.isNotBlank() }?.text
+            } else {
+                it.text
+            }
+        }
             ?: summaryLabel
 
     val displayPreviewText: String
@@ -37,6 +56,7 @@ data class MemoDraft(
                 MemoBlockType.Text -> block.text.isNotBlank()
                 MemoBlockType.Image -> !block.imageUri.isNullOrBlank()
                 MemoBlockType.Drawing -> block.strokes.any { it.points.size > 1 }
+                MemoBlockType.List -> block.listItems.any { it.text.isNotBlank() }
             }
         }
 
@@ -45,10 +65,12 @@ data class MemoDraft(
             val textCount = blocks.count { it.type == MemoBlockType.Text && it.text.isNotBlank() }
             val imageCount = blocks.count { it.type == MemoBlockType.Image && !it.imageUri.isNullOrBlank() }
             val drawingCount = blocks.count { it.type == MemoBlockType.Drawing && it.strokes.isNotEmpty() }
+            val listCount = blocks.count { it.type == MemoBlockType.List && it.listItems.any { item -> item.text.isNotBlank() } }
             val labels = buildList {
                 if (textCount > 0) add("$textCount text")
                 if (imageCount > 0) add("$imageCount image")
                 if (drawingCount > 0) add("$drawingCount drawing")
+                if (listCount > 0) add("$listCount list")
             }
             return if (labels.isEmpty()) "(empty memo)" else labels.joinToString(" · ")
         }

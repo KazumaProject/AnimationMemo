@@ -11,7 +11,10 @@ import com.kazumaproject.animationswipememo.di.AppContainer
 import com.kazumaproject.animationswipememo.domain.export.AnimationExporter
 import com.kazumaproject.animationswipememo.domain.export.ExportRequest
 import com.kazumaproject.animationswipememo.domain.model.AnimationStyle
+import com.kazumaproject.animationswipememo.domain.model.ListAppearance
+import com.kazumaproject.animationswipememo.domain.model.ListItemType
 import com.kazumaproject.animationswipememo.domain.model.MemoBlock
+import com.kazumaproject.animationswipememo.domain.model.MemoBlockType
 import com.kazumaproject.animationswipememo.domain.model.MemoDraft
 import com.kazumaproject.animationswipememo.domain.model.MemoFontFamily
 import com.kazumaproject.animationswipememo.domain.model.PaperStyle
@@ -21,6 +24,7 @@ import com.kazumaproject.animationswipememo.domain.model.TextStyleSetting
 import com.kazumaproject.animationswipememo.domain.repository.MemoRepository
 import com.kazumaproject.animationswipememo.domain.repository.SavedDrawingRepository
 import com.kazumaproject.animationswipememo.domain.repository.SettingsRepository
+import com.kazumaproject.animationswipememo.domain.usecase.ListBlockEditorUseCase
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -38,6 +42,7 @@ class EditorViewModel(
     private val animationExporter: AnimationExporter,
     private val savedDrawingRepository: SavedDrawingRepository
 ) : ViewModel() {
+    private val listBlockEditorUseCase = ListBlockEditorUseCase()
     private val memoId: String? = savedStateHandle["memoId"]
     private val draftState = MutableStateFlow<MemoDraft?>(null)
     private val loadingState = MutableStateFlow(true)
@@ -161,6 +166,20 @@ class EditorViewModel(
         drawingEditorVisibleState.value = false
     }
 
+    fun addListBlock() {
+        val draft = draftState.value ?: return
+        val newBlock = MemoBlock.createList(
+            defaultAnimation = uiState.value.settings.defaultAnimation,
+            y = (0.24f + (draft.blocks.size * 0.1f)).coerceAtMost(0.78f)
+        )
+        draftState.value = draft.copy(
+            blocks = draft.blocks + newBlock,
+            updatedAt = System.currentTimeMillis()
+        )
+        selectedBlockIdState.value = newBlock.id
+        editorSheetVisibleState.value = true
+    }
+
     fun selectBlock(blockId: String) {
         selectedBlockIdState.value = blockId
     }
@@ -269,6 +288,108 @@ class EditorViewModel(
     fun updateSelectedBlockText(text: String) {
         updateSelectedBlock { block ->
             block.copy(text = text.take(160))
+        }
+    }
+
+    fun addListItem() {
+        updateSelectedListBlock { block ->
+            listBlockEditorUseCase.addListItem(block)
+        }
+    }
+
+    fun updateListItemText(itemId: String, text: String) {
+        updateSelectedListBlock { block ->
+            listBlockEditorUseCase.updateListItemText(block, itemId, text.take(160))
+        }
+    }
+
+    fun removeListItem(itemId: String) {
+        updateSelectedListBlock { block ->
+            listBlockEditorUseCase.removeListItem(block, itemId)
+        }
+    }
+
+    fun toggleListItemChecked(itemId: String) {
+        updateSelectedListBlock { block ->
+            listBlockEditorUseCase.toggleListItemChecked(block, itemId)
+        }
+    }
+
+    fun toggleListItemCheckedFromCanvas(blockId: String, itemId: String) {
+        val draft = draftState.value ?: return
+        draftState.value = draft.copy(
+            blocks = draft.blocks.map { block ->
+                if (block.id == blockId && block.type == MemoBlockType.List) {
+                    listBlockEditorUseCase.toggleListItemChecked(block, itemId)
+                } else {
+                    block
+                }
+            },
+            updatedAt = System.currentTimeMillis()
+        )
+        selectedBlockIdState.value = blockId
+    }
+
+    fun toggleListItemExpandedFromCanvas(blockId: String, itemId: String) {
+        val draft = draftState.value ?: return
+        draftState.value = draft.copy(
+            blocks = draft.blocks.map { block ->
+                if (block.id == blockId && block.type == MemoBlockType.List) {
+                    listBlockEditorUseCase.toggleListItemExpanded(block, itemId)
+                } else {
+                    block
+                }
+            },
+            updatedAt = System.currentTimeMillis()
+        )
+        selectedBlockIdState.value = blockId
+    }
+
+    fun updateListItemType(itemId: String, type: ListItemType) {
+        updateSelectedListBlock { block ->
+            listBlockEditorUseCase.updateListItemType(block, itemId, type)
+        }
+    }
+
+    fun increaseListItemIndent(itemId: String) {
+        updateSelectedListBlock { block ->
+            listBlockEditorUseCase.increaseIndent(block, itemId)
+        }
+    }
+
+    fun decreaseListItemIndent(itemId: String) {
+        updateSelectedListBlock { block ->
+            listBlockEditorUseCase.decreaseIndent(block, itemId)
+        }
+    }
+
+    fun moveListItemUp(itemId: String) {
+        updateSelectedListBlock { block ->
+            val index = block.listItems.indexOfFirst { it.id == itemId }
+            if (index <= 0) block else listBlockEditorUseCase.moveListItem(block, index, index - 1)
+        }
+    }
+
+    fun moveListItemDown(itemId: String) {
+        updateSelectedListBlock { block ->
+            val index = block.listItems.indexOfFirst { it.id == itemId }
+            if (index < 0 || index >= block.listItems.lastIndex) {
+                block
+            } else {
+                listBlockEditorUseCase.moveListItem(block, index, index + 1)
+            }
+        }
+    }
+
+    fun toggleListItemExpanded(itemId: String) {
+        updateSelectedListBlock { block ->
+            listBlockEditorUseCase.toggleListItemExpanded(block, itemId)
+        }
+    }
+
+    fun updateSelectedListAppearance(appearance: ListAppearance) {
+        updateSelectedListBlock { block ->
+            listBlockEditorUseCase.updateListAppearance(block, appearance)
         }
     }
 
@@ -400,7 +521,7 @@ class EditorViewModel(
     fun saveMemo() {
         val draft = draftState.value ?: return
         if (!draft.hasContent) {
-            emitMessage("Add text, image, or handwriting before saving.")
+            emitMessage("Add text, image, list, or handwriting before saving.")
             return
         }
         executeAction {
@@ -446,7 +567,7 @@ class EditorViewModel(
     fun exportGif(darkTheme: Boolean) {
         val draft = draftState.value ?: return
         if (!draft.hasContent) {
-            emitMessage("Add text, image, or handwriting before exporting.")
+            emitMessage("Add text, image, list, or handwriting before exporting.")
             return
         }
         executeAction {
@@ -465,7 +586,7 @@ class EditorViewModel(
     fun exportPng(darkTheme: Boolean) {
         val draft = draftState.value ?: return
         if (!draft.hasContent) {
-            emitMessage("Add text, image, or handwriting before exporting.")
+            emitMessage("Add text, image, list, or handwriting before exporting.")
             return
         }
         executeAction {
@@ -490,6 +611,16 @@ class EditorViewModel(
             },
             updatedAt = System.currentTimeMillis()
         )
+    }
+
+    private fun updateSelectedListBlock(transform: (MemoBlock) -> MemoBlock) {
+        updateSelectedBlock { block ->
+            if (block.type == MemoBlockType.List) {
+                transform(block)
+            } else {
+                block
+            }
+        }
     }
 
     private fun executeAction(block: suspend () -> Unit) {
@@ -566,14 +697,14 @@ private fun MemoBlock.scaledBy(
     val minScale = buildList {
         add(MIN_BLOCK_FRACTION / safeWidth)
         add(MIN_BLOCK_FRACTION / safeHeight)
-        if (isText) {
+        if (isText || isList) {
             add(TextStyleSetting.MIN_FONT_SIZE / safeFontSize)
         }
     }.maxOrNull() ?: 1f
     val maxScale = buildList {
         add(MAX_BLOCK_FRACTION / safeWidth)
         add(MAX_BLOCK_FRACTION / safeHeight)
-        if (isText) {
+        if (isText || isList) {
             add(TextStyleSetting.MAX_FONT_SIZE / safeFontSize)
         }
     }.minOrNull() ?: 1f
@@ -581,7 +712,7 @@ private fun MemoBlock.scaledBy(
     val scaledWidth = widthFraction * appliedScale
     val scaledHeight = heightFraction * appliedScale
 
-    val adjustedY = if (isText) {
+    val adjustedY = if (isText || isList) {
         val centerY = normalizedY + (heightFraction / 2f)
         (centerY - (scaledHeight / 2f)).coerceIn(minimumY, 0.9f)
     } else {
@@ -592,7 +723,7 @@ private fun MemoBlock.scaledBy(
         normalizedY = adjustedY,
         widthFraction = scaledWidth,
         heightFraction = scaledHeight,
-        textStyle = if (isText) {
+        textStyle = if (isText || isList) {
             textStyle.copy(fontSize = textStyle.fontSize * appliedScale)
         } else {
             textStyle

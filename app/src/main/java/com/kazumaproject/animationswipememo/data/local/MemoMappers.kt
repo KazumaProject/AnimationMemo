@@ -5,6 +5,10 @@ import com.kazumaproject.animationswipememo.domain.model.MemoBlock
 import com.kazumaproject.animationswipememo.domain.model.MemoBlockType
 import com.kazumaproject.animationswipememo.domain.model.MemoDraft
 import com.kazumaproject.animationswipememo.domain.model.MemoFontFamily
+import com.kazumaproject.animationswipememo.domain.model.ListAppearance
+import com.kazumaproject.animationswipememo.domain.model.ListItem
+import com.kazumaproject.animationswipememo.domain.model.ListItemAppearance
+import com.kazumaproject.animationswipememo.domain.model.ListItemType
 import com.kazumaproject.animationswipememo.domain.model.MemoTextAlign
 import com.kazumaproject.animationswipememo.domain.model.PaperStyle
 import com.kazumaproject.animationswipememo.domain.model.SavedDrawing
@@ -64,6 +68,21 @@ private fun encodeBlocks(blocks: List<MemoBlock>): String {
     val array = JSONArray()
     blocks.forEach { block ->
         val strokesJson = JSONArray(encodeStrokes(block.strokes))
+        val listItemsJson = JSONArray().apply {
+            block.listItems.forEach { item ->
+                put(
+                    JSONObject().apply {
+                        put("id", item.id)
+                        put("text", item.text)
+                        put("indentLevel", item.indentLevel)
+                        put("itemType", item.itemType.name)
+                        put("checked", item.checked)
+                        put("isExpanded", item.isExpanded)
+                        put("fontScaleOverride", item.appearanceOverride?.fontScaleOverride)
+                    }
+                )
+            }
+        }
         array.put(
             JSONObject().apply {
                 put("id", block.id)
@@ -84,6 +103,12 @@ private fun encodeBlocks(blocks: List<MemoBlock>): String {
                 put("isUnderline", block.textStyle.isUnderline)
                 put("imageUri", block.imageUri)
                 put("strokes", strokesJson)
+                put("listItems", listItemsJson)
+                put("listFontScale", block.listAppearance?.fontScale?.toDouble())
+                put("listLevelScaleStep", block.listAppearance?.levelScaleStep?.toDouble())
+                put("listMinFontScale", block.listAppearance?.minFontScale?.toDouble())
+                put("listIndentStepDp", block.listAppearance?.indentStepDp?.toDouble())
+                put("listMarkerGapDp", block.listAppearance?.markerGapDp?.toDouble())
             }
         )
     }
@@ -102,6 +127,12 @@ private fun decodeBlocks(json: String): List<MemoBlock> {
                 val strokes = decodeStrokes(
                     (item.optJSONArray("strokes") ?: JSONArray()).toString()
                 )
+                val legacyListItemType = when (item.optString("listStyle", "").uppercase()) {
+                    "ORDERED" -> ListItemType.ORDERED
+                    "CHECKBOX" -> ListItemType.CHECKBOX
+                    "UNORDERED" -> ListItemType.UNORDERED
+                    else -> ListItemType.UNORDERED
+                }
                 add(
                     MemoBlock(
                         id = item.getString("id"),
@@ -132,7 +163,46 @@ private fun decodeBlocks(json: String): List<MemoBlock> {
                             isUnderline = item.optBoolean("isUnderline", false)
                         ),
                         imageUri = item.optString("imageUri").ifBlank { null },
-                        strokes = strokes
+                        strokes = strokes,
+                        listItems = (item.optJSONArray("listItems") ?: JSONArray()).let { itemsJson ->
+                            buildList {
+                                repeat(itemsJson.length()) { listItemIndex ->
+                                    val listItemJson = itemsJson.getJSONObject(listItemIndex)
+                                    add(
+                                        ListItem(
+                                            id = listItemJson.optString("id").ifBlank {
+                                                java.util.UUID.randomUUID().toString()
+                                            },
+                                            text = listItemJson.optString("text"),
+                                            indentLevel = listItemJson.optInt("indentLevel", 0).coerceAtLeast(0),
+                                            itemType = listItemJson.optString("itemType")
+                                                .takeIf { it.isNotBlank() }
+                                                ?.let { runCatching { ListItemType.valueOf(it) }.getOrNull() }
+                                                ?: legacyListItemType,
+                                            checked = listItemJson.optBoolean("checked", false),
+                                            isExpanded = if (listItemJson.has("isExpanded")) {
+                                                listItemJson.optBoolean("isExpanded", true)
+                                            } else {
+                                                !listItemJson.optBoolean("collapsed", false)
+                                            },
+                                            appearanceOverride = listItemJson.optDouble("fontScaleOverride", Double.NaN)
+                                                .takeIf { it.isFinite() }
+                                                ?.toFloat()
+                                                ?.let { scale -> ListItemAppearance(fontScaleOverride = scale) }
+                                        )
+                                    )
+                                }
+                            }
+                        },
+                        listAppearance = item.optJSONArray("listItems")?.let {
+                            ListAppearance(
+                                fontScale = item.optDouble("listFontScale", 1.0).toFloat(),
+                                levelScaleStep = item.optDouble("listLevelScaleStep", 0.04).toFloat(),
+                                minFontScale = item.optDouble("listMinFontScale", 0.72).toFloat(),
+                                indentStepDp = item.optDouble("listIndentStepDp", 16.0).toFloat(),
+                                markerGapDp = item.optDouble("listMarkerGapDp", 8.0).toFloat()
+                            )
+                        }
                     )
                 )
             }

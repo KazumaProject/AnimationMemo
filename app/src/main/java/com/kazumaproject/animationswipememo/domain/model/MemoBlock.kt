@@ -5,8 +5,37 @@ import java.util.UUID
 enum class MemoBlockType {
     Text,
     Image,
-    Drawing
+    Drawing,
+    List
 }
+
+enum class ListItemType {
+    ORDERED,
+    UNORDERED,
+    CHECKBOX
+}
+
+data class ListItemAppearance(
+    val fontScaleOverride: Float? = null
+)
+
+data class ListAppearance(
+    val fontScale: Float = 1f,
+    val levelScaleStep: Float = 0.04f,
+    val minFontScale: Float = 0.72f,
+    val indentStepDp: Float = 16f,
+    val markerGapDp: Float = 8f
+)
+
+data class ListItem(
+    val id: String = UUID.randomUUID().toString(),
+    val text: String,
+    val indentLevel: Int = 0,
+    val itemType: ListItemType = ListItemType.UNORDERED,
+    val checked: Boolean = false,
+    val isExpanded: Boolean = true,
+    val appearanceOverride: ListItemAppearance? = null
+)
 
 data class StrokePoint(
     val x: Float,
@@ -31,7 +60,9 @@ data class MemoBlock(
     val animationStyle: AnimationStyle,
     val textStyle: TextStyleSetting,
     val imageUri: String?,
-    val strokes: List<StrokeData>
+    val strokes: List<StrokeData>,
+    val listItems: List<ListItem>,
+    val listAppearance: ListAppearance?
 ) {
     val isText: Boolean
         get() = type == MemoBlockType.Text
@@ -41,6 +72,9 @@ data class MemoBlock(
 
     val isDrawing: Boolean
         get() = type == MemoBlockType.Drawing
+
+    val isList: Boolean
+        get() = type == MemoBlockType.List
 
     companion object {
         fun createText(
@@ -60,7 +94,9 @@ data class MemoBlock(
                 animationStyle = defaultAnimation,
                 textStyle = TextStyleSetting(),
                 imageUri = null,
-                strokes = emptyList()
+                strokes = emptyList(),
+                listItems = emptyList(),
+                listAppearance = null
             )
         }
 
@@ -84,7 +120,9 @@ data class MemoBlock(
                 animationStyle = animationStyle,
                 textStyle = TextStyleSetting(),
                 imageUri = imageUri,
-                strokes = emptyList()
+                strokes = emptyList(),
+                listItems = emptyList(),
+                listAppearance = null
             )
         }
 
@@ -109,7 +147,32 @@ data class MemoBlock(
                 animationStyle = animationStyle,
                 textStyle = TextStyleSetting(),
                 imageUri = null,
-                strokes = strokes
+                strokes = strokes,
+                listItems = emptyList(),
+                listAppearance = null
+            )
+        }
+
+        fun createList(
+            defaultAnimation: AnimationStyle,
+            x: Float = 0.5f,
+            y: Float = 0.3f
+        ): MemoBlock {
+            return MemoBlock(
+                id = UUID.randomUUID().toString(),
+                type = MemoBlockType.List,
+                normalizedX = x,
+                normalizedY = y,
+                widthFraction = 0.62f,
+                heightFraction = 0.28f,
+                contentAspectRatio = null,
+                text = "",
+                animationStyle = defaultAnimation,
+                textStyle = TextStyleSetting(),
+                imageUri = null,
+                strokes = emptyList(),
+                listItems = listOf(ListItem(text = "")),
+                listAppearance = ListAppearance()
             )
         }
     }

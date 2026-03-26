@@ -56,6 +56,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -78,6 +79,8 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kazumaproject.animationswipememo.domain.model.AnimationStyle
+import com.kazumaproject.animationswipememo.domain.model.ListAppearance
+import com.kazumaproject.animationswipememo.domain.model.ListItemType
 import com.kazumaproject.animationswipememo.domain.model.MemoBlockType
 import com.kazumaproject.animationswipememo.domain.model.MemoFontFamily
 import com.kazumaproject.animationswipememo.domain.model.TextStyleSetting
@@ -196,6 +199,16 @@ fun EditorScreen(
                 onToggleUnderline = viewModel::toggleSelectedBlockUnderline,
                 onWidthChange = viewModel::updateSelectedBlockWidth,
                 onHeightChange = viewModel::updateSelectedBlockHeight,
+                onAddListItem = viewModel::addListItem,
+                onUpdateListItemText = viewModel::updateListItemText,
+                onUpdateListItemType = viewModel::updateListItemType,
+                onRemoveListItem = viewModel::removeListItem,
+                onToggleListItemChecked = viewModel::toggleListItemChecked,
+                onIncreaseIndent = viewModel::increaseListItemIndent,
+                onDecreaseIndent = viewModel::decreaseListItemIndent,
+                onMoveListItemUp = viewModel::moveListItemUp,
+                onMoveListItemDown = viewModel::moveListItemDown,
+                onListAppearanceChange = viewModel::updateSelectedListAppearance,
                 onDeleteBlock = viewModel::deleteSelectedBlock,
                 onClose = {
                     dismissTransientInput()
@@ -324,8 +337,11 @@ fun EditorScreen(
                     },
                     onBlockDrag = viewModel::moveBlock,
                     onBlockScale = viewModel::scaleBlock,
+                    onToggleListItemCheckedOnCanvas = viewModel::toggleListItemCheckedFromCanvas,
+                    onToggleListItemExpandedOnCanvas = viewModel::toggleListItemExpandedFromCanvas,
                     onAddText = viewModel::addTextBlock,
                     onAddImage = { imagePicker.launch(arrayOf("image/*")) },
+                    onAddList = viewModel::addListBlock,
                     onOpenDrawingLibrary = viewModel::openDrawingLibrary,
                     onEditSelected = viewModel::showEditorSheet,
                     onExportGif = { viewModel.exportGif(isDarkTheme) },
@@ -364,8 +380,11 @@ private fun EditorCanvasContent(
     onBlockDragStart: (String) -> Unit,
     onBlockDrag: (String, Float, Float) -> Unit,
     onBlockScale: (String, Float) -> Unit,
+    onToggleListItemCheckedOnCanvas: (String, String) -> Unit,
+    onToggleListItemExpandedOnCanvas: (String, String) -> Unit,
     onAddText: () -> Unit,
     onAddImage: () -> Unit,
+    onAddList: () -> Unit,
     onOpenDrawingLibrary: () -> Unit,
     onEditSelected: () -> Unit,
     onExportGif: () -> Unit,
@@ -402,6 +421,7 @@ private fun EditorCanvasContent(
             ) {
                 ToolButton("Add Text", Icons.Outlined.AddBox, onAddText)
                 ToolButton("Image", Icons.Outlined.Image, onAddImage)
+                ToolButton("List", Icons.AutoMirrored.Outlined.List, onAddList)
                 ToolButton("Handwriting", Icons.Outlined.AutoFixHigh, onOpenDrawingLibrary)
                 ToolButton("Edit", Icons.Outlined.Draw, onEditSelected)
                 ToolButton("GIF", Icons.Outlined.FileDownload, onExportGif)
@@ -420,7 +440,9 @@ private fun EditorCanvasContent(
             onCanvasTap = onCanvasTap,
             onBlockDragStart = onBlockDragStart,
             onBlockDrag = onBlockDrag,
-            onBlockScale = onBlockScale
+            onBlockScale = onBlockScale,
+            onToggleListItemChecked = onToggleListItemCheckedOnCanvas,
+            onToggleListItemExpanded = onToggleListItemExpandedOnCanvas
         )
     }
 }
@@ -449,6 +471,16 @@ private fun BlockEditorSheet(
     onToggleUnderline: () -> Unit,
     onWidthChange: (Float) -> Unit,
     onHeightChange: (Float) -> Unit,
+    onAddListItem: () -> Unit,
+    onUpdateListItemText: (String, String) -> Unit,
+    onUpdateListItemType: (String, ListItemType) -> Unit,
+    onRemoveListItem: (String) -> Unit,
+    onToggleListItemChecked: (String) -> Unit,
+    onIncreaseIndent: (String) -> Unit,
+    onDecreaseIndent: (String) -> Unit,
+    onMoveListItemUp: (String) -> Unit,
+    onMoveListItemDown: (String) -> Unit,
+    onListAppearanceChange: (ListAppearance) -> Unit,
     onDeleteBlock: () -> Unit,
     onClose: () -> Unit
 ) {
@@ -467,6 +499,7 @@ private fun BlockEditorSheet(
                 MemoBlockType.Text -> "Text block editor"
                 MemoBlockType.Image -> "Image block editor"
                 MemoBlockType.Drawing -> "Handwriting block editor"
+                MemoBlockType.List -> "List block editor"
             },
             style = MaterialTheme.typography.titleLarge
         )
@@ -497,6 +530,25 @@ private fun BlockEditorSheet(
                     text = "This handwriting block can be repositioned and animated after you place it on the memo.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            MemoBlockType.List -> {
+                ListAppearanceEditor(
+                    appearance = block.listAppearance ?: ListAppearance(),
+                    onAppearanceChange = onListAppearanceChange
+                )
+                ListItemsEditor(
+                    block = block,
+                    onAddItem = onAddListItem,
+                    onUpdateText = onUpdateListItemText,
+                    onUpdateType = onUpdateListItemType,
+                    onRemoveItem = onRemoveListItem,
+                    onToggleChecked = onToggleListItemChecked,
+                    onIncreaseIndent = onIncreaseIndent,
+                    onDecreaseIndent = onDecreaseIndent,
+                    onMoveUp = onMoveListItemUp,
+                    onMoveDown = onMoveListItemDown
                 )
             }
         }
@@ -553,7 +605,7 @@ private fun BlockEditorSheet(
 
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
-                text = if (block.type == MemoBlockType.Text) {
+                text = if (block.type == MemoBlockType.Text || block.type == MemoBlockType.List) {
                     "Text area width: ${(block.widthFraction * 100f).toInt()}%"
                 } else {
                     "Width: ${(block.widthFraction * 100f).toInt()}%"
@@ -568,7 +620,7 @@ private fun BlockEditorSheet(
         }
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
-                text = if (block.type == MemoBlockType.Text) {
+                text = if (block.type == MemoBlockType.Text || block.type == MemoBlockType.List) {
                     "Text area height: ${(block.heightFraction * 100f).toInt()}%"
                 } else {
                     "Height: ${(block.heightFraction * 100f).toInt()}%"
@@ -592,6 +644,85 @@ private fun BlockEditorSheet(
             TextButton(onClick = onClose) {
                 Text("Done")
             }
+        }
+    }
+}
+
+@Composable
+private fun ListAppearanceEditor(
+    appearance: ListAppearance,
+    onAppearanceChange: (ListAppearance) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("List font scale: ${(appearance.fontScale * 100f).toInt()}%", style = MaterialTheme.typography.titleMedium)
+        Slider(
+            value = appearance.fontScale,
+            onValueChange = { onAppearanceChange(appearance.copy(fontScale = it.coerceIn(0.72f, 1.4f))) },
+            valueRange = 0.72f..1.4f
+        )
+    }
+}
+
+@Composable
+private fun ListItemsEditor(
+    block: com.kazumaproject.animationswipememo.domain.model.MemoBlock,
+    onAddItem: () -> Unit,
+    onUpdateText: (String, String) -> Unit,
+    onUpdateType: (String, ListItemType) -> Unit,
+    onRemoveItem: (String) -> Unit,
+    onToggleChecked: (String) -> Unit,
+    onIncreaseIndent: (String) -> Unit,
+    onDecreaseIndent: (String) -> Unit,
+    onMoveUp: (String) -> Unit,
+    onMoveDown: (String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Items", style = MaterialTheme.typography.titleMedium)
+        block.listItems.forEachIndexed { index, item ->
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = item.text,
+                    onValueChange = { onUpdateText(item.id, it) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Item ${index + 1}") },
+                    singleLine = true
+                )
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ListItemType.entries.forEach { type ->
+                        FilterChip(
+                            selected = item.itemType == type,
+                            onClick = { onUpdateType(item.id, type) },
+                            label = { Text(type.name) }
+                        )
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { onIncreaseIndent(item.id) }) { Text("Indent +") }
+                    TextButton(onClick = { onDecreaseIndent(item.id) }) { Text("Indent -") }
+                    TextButton(onClick = { onMoveUp(item.id) }) { Text("Up") }
+                    TextButton(onClick = { onMoveDown(item.id) }) { Text("Down") }
+                    TextButton(onClick = { onRemoveItem(item.id) }) { Text("Delete") }
+                }
+                if (item.itemType == ListItemType.CHECKBOX) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Checked")
+                        Switch(
+                            checked = item.checked,
+                            onCheckedChange = { onToggleChecked(item.id) }
+                        )
+                    }
+                }
+            }
+        }
+        TextButton(onClick = onAddItem) {
+            Text("Add item")
         }
     }
 }

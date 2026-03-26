@@ -4,18 +4,25 @@ import android.content.Context
 import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -53,6 +60,11 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.CheckBox
+import androidx.compose.material.icons.outlined.CheckBoxOutlineBlank
 import com.kazumaproject.animationswipememo.domain.animation.MemoAnimationEngine
 import com.kazumaproject.animationswipememo.domain.model.fitContentSize
 import com.kazumaproject.animationswipememo.domain.model.MemoBlock
@@ -60,6 +72,7 @@ import com.kazumaproject.animationswipememo.domain.model.MemoBlockType
 import com.kazumaproject.animationswipememo.domain.model.MemoDraft
 import com.kazumaproject.animationswipememo.domain.model.MemoTextAlign
 import com.kazumaproject.animationswipememo.domain.model.resolvedContentAspectRatio
+import com.kazumaproject.animationswipememo.domain.usecase.ListBlockRenderUseCase
 import com.kazumaproject.animationswipememo.platform.decodeSampledBitmap
 import com.kazumaproject.animationswipememo.platform.composeFontStyle
 import com.kazumaproject.animationswipememo.platform.composeFontWeight
@@ -81,7 +94,9 @@ fun PaperMemoCanvas(
     onCanvasTap: () -> Unit,
     onBlockDragStart: (String) -> Unit,
     onBlockDrag: (String, Float, Float) -> Unit,
-    onBlockScale: (String, Float) -> Unit
+    onBlockScale: (String, Float) -> Unit,
+    onToggleListItemChecked: (String, String) -> Unit,
+    onToggleListItemExpanded: (String, String) -> Unit
 ) {
     val density = LocalDensity.current
     val paper = memo.paperStyle.palette(darkTheme)
@@ -173,6 +188,142 @@ fun PaperMemoCanvas(
                     onBlockDrag = onBlockDrag,
                     onBlockScale = onBlockScale
                 )
+
+                MemoBlockType.List -> ListBlockView(
+                    block = block,
+                    selected = block.id == selectedBlockId,
+                    progress = progress,
+                    darkTheme = darkTheme,
+                    canvasWidthPx = canvasWidthPx,
+                    canvasHeightPx = canvasHeightPx,
+                    onBlockDragStart = onBlockDragStart,
+                    onBlockDrag = onBlockDrag,
+                    onBlockScale = onBlockScale,
+                    onToggleListItemChecked = onToggleListItemChecked,
+                    onToggleListItemExpanded = onToggleListItemExpanded
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ListBlockView(
+    block: MemoBlock,
+    selected: Boolean,
+    progress: Float,
+    darkTheme: Boolean,
+    canvasWidthPx: Int,
+    canvasHeightPx: Int,
+    onBlockDragStart: (String) -> Unit,
+    onBlockDrag: (String, Float, Float) -> Unit,
+    onBlockScale: (String, Float) -> Unit,
+    onToggleListItemChecked: (String, String) -> Unit,
+    onToggleListItemExpanded: (String, String) -> Unit
+) {
+    val density = LocalDensity.current
+    val renderUseCase = remember { ListBlockRenderUseCase() }
+    val frame = MemoAnimationEngine.frameAt(block.animationStyle, block.text, progress)
+    val visibleItems = remember(block.listItems, block.listAppearance) {
+        renderUseCase.visibleItems(block)
+    }
+
+    val blockWidthPx = (canvasWidthPx * block.widthFraction).roundToInt().coerceAtLeast(140)
+    val blockWidthDp = with(density) { blockWidthPx.toDp() }
+    val minHeightPx = (canvasHeightPx * block.heightFraction).roundToInt().coerceAtLeast(64)
+    val contentHeightPx = estimateListBlockHeightPx(
+        itemCount = visibleItems.size,
+        baseFontSizeSp = block.textStyle.fontSize,
+        density = density
+    )
+    val blockHeightDp = with(density) { max(minHeightPx.toFloat(), contentHeightPx).toDp() }
+    val offsetX = (block.normalizedX * canvasWidthPx - (blockWidthPx / 2f) + frame.offsetXPx).roundToInt()
+    val offsetY = (block.normalizedY * canvasHeightPx + frame.offsetYPx).roundToInt()
+    val indentStepDp = (block.listAppearance?.indentStepDp ?: 16f).dp
+
+    Box(
+        modifier = blockGestureModifier(
+            block = block,
+            selected = selected,
+            canvasWidthPx = canvasWidthPx,
+            canvasHeightPx = canvasHeightPx,
+            offsetX = offsetX,
+            offsetY = offsetY,
+            widthModifier = Modifier
+                .width(blockWidthDp)
+                .defaultMinSize(minHeight = blockHeightDp),
+            onBlockDragStart = onBlockDragStart,
+            onBlockDrag = onBlockDrag,
+            onBlockScale = onBlockScale
+        ).graphicsLayer {
+            alpha = frame.alpha
+            scaleX = frame.scale
+            scaleY = frame.scale
+            rotationZ = frame.rotationDeg
+        }
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp)) {
+            visibleItems.forEach { item ->
+                val marker = item.markerText
+                val text = if (item.text.isBlank()) "..." else item.text
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 24.dp)
+                        .padding(start = indentStepDp * item.indentLevel),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (item.canExpand) {
+                        IconButton(
+                            onClick = { onToggleListItemExpanded(block.id, item.itemId) },
+                            modifier = Modifier.size(20.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (item.isExpanded) {
+                                    Icons.Outlined.KeyboardArrowDown
+                                } else {
+                                    Icons.AutoMirrored.Outlined.KeyboardArrowRight
+                                },
+                                contentDescription = "Toggle children"
+                            )
+                        }
+                    } else {
+                        androidx.compose.foundation.layout.Spacer(modifier = Modifier.width(20.dp))
+                    }
+
+                    if (marker == "☑" || marker == "☐") {
+                        IconButton(
+                            onClick = { onToggleListItemChecked(block.id, item.itemId) },
+                            modifier = Modifier.size(20.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (item.checked) Icons.Outlined.CheckBox else Icons.Outlined.CheckBoxOutlineBlank,
+                                contentDescription = "Toggle checkbox"
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = marker,
+                            modifier = Modifier.width(24.dp),
+                            style = textStyleFor(block = block, glowRadius = frame.glowRadiusPx, darkTheme = darkTheme).copy(
+                                fontSize = (block.textStyle.fontSize * item.fontScale).sp
+                            )
+                        )
+                    }
+
+                    Text(
+                        text = text,
+                        modifier = Modifier.clickable(
+                            enabled = marker == "☑" || marker == "☐"
+                        ) {
+                            onToggleListItemChecked(block.id, item.itemId)
+                        },
+                        style = textStyleFor(block = block, glowRadius = frame.glowRadiusPx, darkTheme = darkTheme).copy(
+                            fontSize = (block.textStyle.fontSize * item.fontScale).sp,
+                            textDecoration = item.textDecoration ?: block.textStyle.composeTextDecoration()
+                        )
+                    )
+                }
             }
         }
     }
@@ -571,7 +722,35 @@ private fun blockBounds(
                 bottom = top + height + touchSlop
             )
         }
+
+        MemoBlockType.List -> {
+            val width = (canvasWidthPx * block.widthFraction).coerceAtLeast(140f)
+            val minimumHeight = (canvasHeightPx * block.heightFraction).coerceAtLeast(64f)
+            val listHeight = estimateListBlockHeightPx(
+                itemCount = block.listItems.size.coerceAtLeast(1),
+                baseFontSizeSp = block.textStyle.fontSize,
+                density = density
+            )
+            val height = max(minimumHeight, listHeight)
+            val left = (block.normalizedX * canvasWidthPx) - (width / 2f) + frame.offsetXPx
+            val top = (block.normalizedY * canvasHeightPx) + frame.offsetYPx
+            Rect(
+                left = left - touchSlop,
+                top = top - touchSlop,
+                right = left + width + touchSlop,
+                bottom = top + height + touchSlop
+            )
+        }
     }
+}
+
+private fun estimateListBlockHeightPx(
+    itemCount: Int,
+    baseFontSizeSp: Float,
+    density: Density
+): Float {
+    val fontSizePx = with(density) { baseFontSizeSp.sp.toPx() }
+    return (itemCount.coerceAtLeast(1) * fontSizePx * 1.45f) + (fontSizePx * 0.6f)
 }
 
 private fun estimateTextBlockHeightPx(

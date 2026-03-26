@@ -26,6 +26,7 @@ enum class AnimationStyle(
             MemoBlockType.Text -> true
             MemoBlockType.Image,
             MemoBlockType.Drawing -> this != Typewriter
+            MemoBlockType.List -> this != Typewriter
         }
     }
 

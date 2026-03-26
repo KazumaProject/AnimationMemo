@@ -22,6 +22,7 @@ import com.kazumaproject.animationswipememo.domain.model.PaperPattern
 import com.kazumaproject.animationswipememo.domain.model.PaperStyle
 import com.kazumaproject.animationswipememo.domain.model.MemoTextAlign
 import com.kazumaproject.animationswipememo.domain.model.resolvedContentAspectRatio
+import com.kazumaproject.animationswipememo.domain.usecase.ListBlockRenderUseCase
 import com.kazumaproject.animationswipememo.platform.decodeSampledBitmap
 import com.kazumaproject.animationswipememo.platform.toStyledTypeface
 import kotlin.math.max
@@ -31,6 +32,7 @@ class MemoBitmapFrameRenderer(
     private val context: Context
 ) {
     private val imageCache = mutableMapOf<String, Bitmap?>()
+    private val listRenderUseCase = ListBlockRenderUseCase()
 
     fun renderFrame(
         memo: MemoDraft,
@@ -78,6 +80,7 @@ class MemoBitmapFrameRenderer(
                 MemoBlockType.Text -> drawTextBlock(canvas, cardRect, block, progress, darkTheme)
                 MemoBlockType.Image -> drawImageBlock(canvas, cardRect, block, progress)
                 MemoBlockType.Drawing -> drawDrawingBlock(canvas, cardRect, block, progress)
+                MemoBlockType.List -> drawListBlock(canvas, cardRect, block, progress, darkTheme)
             }
         }
 
@@ -251,6 +254,53 @@ class MemoBitmapFrameRenderer(
             canvas.drawPath(path, paint)
         }
 
+        canvas.restore()
+    }
+
+    private fun drawListBlock(
+        canvas: Canvas,
+        cardRect: RectF,
+        block: MemoBlock,
+        progress: Float,
+        darkTheme: Boolean
+    ) {
+        val frame = MemoAnimationEngine.frameAt(block.animationStyle, block.text, progress)
+        val visibleItems = listRenderUseCase.visibleItems(block)
+        val resolvedTextColor = block.textStyle.resolvedTextColor(darkTheme)
+        val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = resolvedTextColor
+            alpha = (frame.alpha.coerceIn(0f, 1f) * 255f).toInt()
+            textSize = (cardRect.width() * 0.067f) * (block.textStyle.fontSize / 28f)
+            typeface = block.textStyle.toStyledTypeface(context)
+            isUnderlineText = block.textStyle.isUnderline
+        }
+        val lineHeight = textPaint.textSize * 1.22f
+        val indentStep = cardRect.width() * 0.032f
+        val cx = cardRect.left + block.normalizedX.coerceIn(0.08f, 0.92f) * cardRect.width()
+        val top = cardRect.top + block.normalizedY.coerceIn(0.1f, 0.9f) * cardRect.height()
+        val availableWidth = (cardRect.width() * block.widthFraction).coerceAtLeast(120f)
+        val baseX = cx - (availableWidth / 2f)
+
+        canvas.save()
+        canvas.translate(frame.offsetXPx, frame.offsetYPx)
+        canvas.scale(frame.scale, frame.scale, cx, top)
+        canvas.rotate(frame.rotationDeg, cx, top)
+
+        visibleItems.forEachIndexed { index, item ->
+            val lineY = top + ((index + 1) * lineHeight)
+            val markerX = baseX + (item.indentLevel * indentStep)
+            val bodyX = markerX + (cardRect.width() * 0.04f)
+            canvas.drawText(item.markerText, markerX, lineY, textPaint)
+            val shouldStrike = item.textDecoration != null
+            if (shouldStrike) {
+                val oldStrike = textPaint.isStrikeThruText
+                textPaint.isStrikeThruText = true
+                canvas.drawText(item.text.ifBlank { "..." }, bodyX, lineY, textPaint)
+                textPaint.isStrikeThruText = oldStrike
+            } else {
+                canvas.drawText(item.text.ifBlank { "..." }, bodyX, lineY, textPaint)
+            }
+        }
         canvas.restore()
     }
 
