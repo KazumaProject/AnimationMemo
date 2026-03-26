@@ -15,6 +15,7 @@ import android.text.TextPaint
 import com.kazumaproject.animationswipememo.domain.animation.MemoAnimationEngine
 import com.kazumaproject.animationswipememo.domain.model.fitContentSize
 import com.kazumaproject.animationswipememo.domain.model.MemoBlock
+import com.kazumaproject.animationswipememo.domain.model.MemoBlockPayload
 import com.kazumaproject.animationswipememo.domain.model.MemoBlockType
 import com.kazumaproject.animationswipememo.domain.model.MemoDraft
 import com.kazumaproject.animationswipememo.domain.model.PaperPalette
@@ -22,8 +23,10 @@ import com.kazumaproject.animationswipememo.domain.model.PaperPattern
 import com.kazumaproject.animationswipememo.domain.model.PaperStyle
 import com.kazumaproject.animationswipememo.domain.model.MemoTextAlign
 import com.kazumaproject.animationswipememo.domain.model.resolvedContentAspectRatio
+import com.kazumaproject.animationswipememo.domain.usecase.ListBlockRenderUseCase
 import com.kazumaproject.animationswipememo.platform.decodeSampledBitmap
 import com.kazumaproject.animationswipememo.platform.toStyledTypeface
+import com.kazumaproject.animationswipememo.ui.components.render.KatexBitmapRenderer
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -31,6 +34,8 @@ class MemoBitmapFrameRenderer(
     private val context: Context
 ) {
     private val imageCache = mutableMapOf<String, Bitmap?>()
+    private val listRenderUseCase = ListBlockRenderUseCase()
+    private val katexBitmapRenderer = KatexBitmapRenderer()
 
     fun renderFrame(
         memo: MemoDraft,
@@ -78,6 +83,17 @@ class MemoBitmapFrameRenderer(
                 MemoBlockType.Text -> drawTextBlock(canvas, cardRect, block, progress, darkTheme)
                 MemoBlockType.Image -> drawImageBlock(canvas, cardRect, block, progress)
                 MemoBlockType.Drawing -> drawDrawingBlock(canvas, cardRect, block, progress)
+                MemoBlockType.List -> drawListBlock(canvas, cardRect, block, progress, darkTheme)
+                MemoBlockType.Divider -> drawDividerBlock(canvas, cardRect, block, progress, darkTheme)
+                MemoBlockType.Heading,
+                MemoBlockType.Toggle,
+                MemoBlockType.Quote,
+                MemoBlockType.Code,
+                MemoBlockType.LinkCard,
+                MemoBlockType.Table,
+                MemoBlockType.Conversation,
+                MemoBlockType.Latex,
+                MemoBlockType.Unknown -> drawPayloadTextBlock(canvas, cardRect, block, progress, darkTheme)
             }
         }
 
@@ -252,6 +268,139 @@ class MemoBitmapFrameRenderer(
         }
 
         canvas.restore()
+    }
+
+    private fun drawListBlock(
+        canvas: Canvas,
+        cardRect: RectF,
+        block: MemoBlock,
+        progress: Float,
+        darkTheme: Boolean
+    ) {
+        val frame = MemoAnimationEngine.frameAt(block.animationStyle, block.text, progress)
+        val visibleItems = listRenderUseCase.visibleItems(block)
+        val resolvedTextColor = block.textStyle.resolvedTextColor(darkTheme)
+        val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = resolvedTextColor
+            alpha = (frame.alpha.coerceIn(0f, 1f) * 255f).toInt()
+            textSize = (cardRect.width() * 0.067f) * (block.textStyle.fontSize / 28f)
+            typeface = block.textStyle.toStyledTypeface(context)
+            isUnderlineText = block.textStyle.isUnderline
+        }
+        val lineHeight = textPaint.textSize * 1.22f
+        val indentStep = cardRect.width() * 0.032f
+        val cx = cardRect.left + block.normalizedX.coerceIn(0.08f, 0.92f) * cardRect.width()
+        val top = cardRect.top + block.normalizedY.coerceIn(0.1f, 0.9f) * cardRect.height()
+        val availableWidth = (cardRect.width() * block.widthFraction).coerceAtLeast(120f)
+        val baseX = cx - (availableWidth / 2f)
+
+        canvas.save()
+        canvas.translate(frame.offsetXPx, frame.offsetYPx)
+        canvas.scale(frame.scale, frame.scale, cx, top)
+        canvas.rotate(frame.rotationDeg, cx, top)
+
+        visibleItems.forEachIndexed { index, item ->
+            val lineY = top + ((index + 1) * lineHeight)
+            val markerX = baseX + (item.indentLevel * indentStep)
+            val bodyX = markerX + (cardRect.width() * 0.04f)
+            canvas.drawText(item.markerText, markerX, lineY, textPaint)
+            val shouldStrike = item.textDecoration != null
+            if (shouldStrike) {
+                val oldStrike = textPaint.isStrikeThruText
+                textPaint.isStrikeThruText = true
+                canvas.drawText(item.text.ifBlank { "..." }, bodyX, lineY, textPaint)
+                textPaint.isStrikeThruText = oldStrike
+            } else {
+                canvas.drawText(item.text.ifBlank { "..." }, bodyX, lineY, textPaint)
+            }
+        }
+        canvas.restore()
+    }
+
+    private fun drawDividerBlock(
+        canvas: Canvas,
+        cardRect: RectF,
+        block: MemoBlock,
+        progress: Float,
+        darkTheme: Boolean
+    ) {
+        val frame = MemoAnimationEngine.frameAt(block.animationStyle, "", progress)
+        val color = if (darkTheme) 0x66FFFFFF else 0x662D241C
+        val cx = cardRect.left + block.normalizedX.coerceIn(0.08f, 0.92f) * cardRect.width()
+        val y = cardRect.top + block.normalizedY.coerceIn(0.1f, 0.9f) * cardRect.height()
+        val width = (cardRect.width() * block.widthFraction).coerceAtLeast(cardRect.width() * 0.18f)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = color.toInt()
+            strokeWidth = max(1f, cardRect.width() * 0.003f)
+            alpha = (frame.alpha.coerceIn(0f, 1f) * 255f).toInt()
+        }
+        canvas.save()
+        canvas.translate(frame.offsetXPx, frame.offsetYPx)
+        canvas.scale(frame.scale, frame.scale, cx, y)
+        canvas.rotate(frame.rotationDeg, cx, y)
+        canvas.drawLine(cx - (width / 2f), y, cx + (width / 2f), y, paint)
+        canvas.restore()
+    }
+
+    private fun drawPayloadTextBlock(
+        canvas: Canvas,
+        cardRect: RectF,
+        block: MemoBlock,
+        progress: Float,
+        darkTheme: Boolean
+    ) {
+        val latexPayload = block.payload as? MemoBlockPayload.Latex
+        if (latexPayload != null && latexPayload.expression.isNotBlank()) {
+            val widthPx = (cardRect.width() * block.widthFraction).toInt().coerceAtLeast(120)
+            val heightPx = (cardRect.height() * block.heightFraction).toInt().coerceAtLeast(80)
+            val bitmap = katexBitmapRenderer.render(
+                context = context,
+                expression = latexPayload.expression,
+                widthPx = widthPx,
+                heightPx = heightPx,
+                darkTheme = darkTheme
+            )
+            if (bitmap != null) {
+                val cx = cardRect.left + block.normalizedX.coerceIn(0.08f, 0.92f) * cardRect.width()
+                val cy = cardRect.top + block.normalizedY.coerceIn(0.1f, 0.9f) * cardRect.height()
+                val frame = MemoAnimationEngine.frameAt(block.animationStyle, "", progress)
+                val dst = RectF(
+                    -widthPx / 2f,
+                    -heightPx / 2f,
+                    widthPx / 2f,
+                    heightPx / 2f
+                )
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    alpha = (frame.alpha.coerceIn(0f, 1f) * 255f).toInt()
+                }
+                canvas.save()
+                canvas.translate(cx + frame.offsetXPx, cy + frame.offsetYPx)
+                canvas.scale(frame.scale, frame.scale)
+                canvas.rotate(frame.rotationDeg)
+                canvas.drawBitmap(bitmap, null, dst, paint)
+                canvas.restore()
+                return
+            }
+        }
+
+        val text = when (val payload = block.payload) {
+            is MemoBlockPayload.Heading -> payload.text
+            is MemoBlockPayload.Toggle -> payload.title
+            is MemoBlockPayload.Quote -> payload.text
+            is MemoBlockPayload.Code -> payload.code
+            is MemoBlockPayload.LinkCard -> payload.title.ifBlank { payload.url }
+            is MemoBlockPayload.Table -> "${payload.rows.size} rows"
+            is MemoBlockPayload.Conversation -> "${payload.items.size} lines"
+            is MemoBlockPayload.Latex -> payload.expression
+            else -> block.text
+        }.ifBlank { block.type.name }
+        drawTextBlock(
+            canvas = canvas,
+            cardRect = cardRect,
+            block = block.copy(text = text),
+            progress = progress,
+            darkTheme = darkTheme
+        )
     }
 
     private fun loadBitmap(

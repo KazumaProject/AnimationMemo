@@ -72,7 +72,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.kazumaproject.animationswipememo.domain.model.ListItemType
 import com.kazumaproject.animationswipememo.domain.model.MemoBlock
+import com.kazumaproject.animationswipememo.domain.model.MemoBlockPayload
 import com.kazumaproject.animationswipememo.domain.model.MemoBlockType
 import com.kazumaproject.animationswipememo.domain.model.MemoDraft
 import com.kazumaproject.animationswipememo.domain.model.fitContentSize
@@ -410,8 +412,53 @@ private fun MemoThumbnail(
 
                 MemoBlockType.Image -> ThumbnailImageBlock(block = block)
                 MemoBlockType.Drawing -> ThumbnailDrawingBlock(block = block)
+                MemoBlockType.List -> ThumbnailListBlock(block = block, darkTheme = darkTheme)
+                MemoBlockType.Heading,
+                MemoBlockType.Toggle,
+                MemoBlockType.Quote,
+                MemoBlockType.Code,
+                MemoBlockType.Divider,
+                MemoBlockType.LinkCard,
+                MemoBlockType.Table,
+                MemoBlockType.Conversation,
+                MemoBlockType.Latex,
+                MemoBlockType.Unknown -> ThumbnailTextBlock(block = block, darkTheme = darkTheme)
             }
         }
+    }
+}
+
+@Composable
+private fun ThumbnailListBlock(
+    block: MemoBlock,
+    darkTheme: Boolean
+) {
+    val preview = block.listItems
+        .take(3)
+        .mapIndexed { index, item ->
+            val marker = when (item.itemType) {
+                ListItemType.ORDERED -> "${index + 1}."
+                ListItemType.UNORDERED -> "•"
+                ListItemType.CHECKBOX -> if (item.checked) "☑" else "☐"
+            }
+            "$marker ${item.text.ifBlank { "..." }}"
+        }
+        .joinToString("\n")
+    Box(modifier = Modifier.fillMaxSize()) {
+        Text(
+            text = preview.ifBlank { "• ..." },
+            modifier = Modifier
+                .width((block.widthFraction * 112f).dp)
+                .offset(
+                    x = ((block.normalizedX * 112f) - (block.widthFraction * 56f)).dp,
+                    y = ((block.normalizedY * 148f) - 14f).dp
+                ),
+            fontSize = (block.textStyle.fontSize * 0.22f).sp,
+            lineHeight = (block.textStyle.fontSize * 0.26f).sp,
+            color = Color(block.textStyle.resolvedTextColor(darkTheme)),
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -420,6 +467,17 @@ private fun ThumbnailTextBlock(
     block: MemoBlock,
     darkTheme: Boolean
 ) {
+    val previewText = when (val payload = block.payload) {
+        is MemoBlockPayload.Heading -> payload.text
+        is MemoBlockPayload.Toggle -> payload.title
+        is MemoBlockPayload.Quote -> payload.text
+        is MemoBlockPayload.Code -> payload.code
+        is MemoBlockPayload.LinkCard -> payload.title.ifBlank { payload.url }
+        is MemoBlockPayload.Table -> "Table"
+        is MemoBlockPayload.Conversation -> "Conversation"
+        is MemoBlockPayload.Latex -> payload.expression
+        else -> block.text
+    }
     val textAlign = when (block.textStyle.textAlign) {
         com.kazumaproject.animationswipememo.domain.model.MemoTextAlign.Start -> TextAlign.Start
         com.kazumaproject.animationswipememo.domain.model.MemoTextAlign.Center -> TextAlign.Center
@@ -430,7 +488,7 @@ private fun ThumbnailTextBlock(
             .fillMaxSize()
     ) {
         Text(
-            text = block.text.ifBlank { "Text" },
+            text = previewText.ifBlank { "Text" },
             modifier = Modifier
                 .width((block.widthFraction * 112f).dp)
                 .offset(
@@ -543,8 +601,21 @@ private fun rememberUriBitmap(
 
 private fun MemoDraft.copyableContent(): String {
     val body = blocks
-        .filter { it.type == MemoBlockType.Text }
-        .mapNotNull { it.text.trim().takeIf(String::isNotBlank) }
+        .mapNotNull { block ->
+            when (val payload = block.payload) {
+                is MemoBlockPayload.Heading -> payload.text
+                is MemoBlockPayload.Toggle -> listOf(payload.title, payload.childBlocks.joinToString("\n") { it.text }).joinToString("\n")
+                is MemoBlockPayload.Quote -> payload.text
+                is MemoBlockPayload.Code -> payload.code
+                is MemoBlockPayload.LinkCard -> listOf(payload.title, payload.url, payload.description)
+                    .filter { it.isNotBlank() }
+                    .joinToString("\n")
+                is MemoBlockPayload.Table -> payload.rows.joinToString("\n") { it.cells.joinToString(" | ") }
+                is MemoBlockPayload.Conversation -> payload.items.joinToString("\n") { "${it.speaker}: ${it.text}" }
+                is MemoBlockPayload.Latex -> payload.expression
+                else -> block.text
+            }.trim().takeIf(String::isNotBlank)
+        }
         .joinToString("\n")
 
     return buildString {

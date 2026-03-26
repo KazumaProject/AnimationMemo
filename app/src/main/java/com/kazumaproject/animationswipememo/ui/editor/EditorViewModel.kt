@@ -1,5 +1,6 @@
 package com.kazumaproject.animationswipememo.ui.editor
 
+import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -11,16 +12,27 @@ import com.kazumaproject.animationswipememo.di.AppContainer
 import com.kazumaproject.animationswipememo.domain.export.AnimationExporter
 import com.kazumaproject.animationswipememo.domain.export.ExportRequest
 import com.kazumaproject.animationswipememo.domain.model.AnimationStyle
+import com.kazumaproject.animationswipememo.domain.model.ConversationItem
+import com.kazumaproject.animationswipememo.domain.model.ConversationRole
+import com.kazumaproject.animationswipememo.domain.model.HeadingLevel
+import com.kazumaproject.animationswipememo.domain.model.ListAppearance
+import com.kazumaproject.animationswipememo.domain.model.ListItemType
 import com.kazumaproject.animationswipememo.domain.model.MemoBlock
+import com.kazumaproject.animationswipememo.domain.model.MemoBlockPayload
+import com.kazumaproject.animationswipememo.domain.model.MemoBlockType
 import com.kazumaproject.animationswipememo.domain.model.MemoDraft
 import com.kazumaproject.animationswipememo.domain.model.MemoFontFamily
 import com.kazumaproject.animationswipememo.domain.model.PaperStyle
 import com.kazumaproject.animationswipememo.domain.model.SavedDrawing
 import com.kazumaproject.animationswipememo.domain.model.StrokeData
+import com.kazumaproject.animationswipememo.domain.model.TableRow
 import com.kazumaproject.animationswipememo.domain.model.TextStyleSetting
+import com.kazumaproject.animationswipememo.domain.model.ToggleChildBlock
 import com.kazumaproject.animationswipememo.domain.repository.MemoRepository
 import com.kazumaproject.animationswipememo.domain.repository.SavedDrawingRepository
 import com.kazumaproject.animationswipememo.domain.repository.SettingsRepository
+import com.kazumaproject.animationswipememo.domain.usecase.ListBlockEditorUseCase
+import com.kazumaproject.animationswipememo.ui.components.render.supportedCodeLanguages
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -38,6 +50,7 @@ class EditorViewModel(
     private val animationExporter: AnimationExporter,
     private val savedDrawingRepository: SavedDrawingRepository
 ) : ViewModel() {
+    private val listBlockEditorUseCase = ListBlockEditorUseCase()
     private val memoId: String? = savedStateHandle["memoId"]
     private val draftState = MutableStateFlow<MemoDraft?>(null)
     private val loadingState = MutableStateFlow(true)
@@ -45,7 +58,9 @@ class EditorViewModel(
     private val existingMemoState = MutableStateFlow(false)
     private val selectedBlockIdState = MutableStateFlow<String?>(null)
     private val editorSheetVisibleState = MutableStateFlow(false)
-    private val toolPaletteVisibleState = MutableStateFlow(true)
+    private val toolPaletteVisibleState = MutableStateFlow(false)
+    private val fabVisibleState = MutableStateFlow(true)
+    private val fabExpandedState = MutableStateFlow(true)
     private val drawingLibraryVisibleState = MutableStateFlow(false)
     private val drawingEditorVisibleState = MutableStateFlow(false)
     private val effects = MutableSharedFlow<EditorEffect>()
@@ -67,19 +82,33 @@ class EditorViewModel(
                     isEditorSheetVisible = isEditorSheetVisible
                 )
             },
-            toolPaletteVisibleState,
-            drawingLibraryVisibleState,
-            drawingEditorVisibleState
-        ) { partialA, isToolPaletteVisible, isDrawingLibraryVisible, isDrawingEditorVisible ->
+            combine(
+                toolPaletteVisibleState,
+                fabVisibleState,
+                fabExpandedState,
+                drawingLibraryVisibleState,
+                drawingEditorVisibleState
+            ) { isToolPaletteVisible, isFabVisible, isFabExpanded, isDrawingLibraryVisible, isDrawingEditorVisible ->
+                PartialEditorVisibility(
+                    isToolPaletteVisible = isToolPaletteVisible,
+                    isFabVisible = isFabVisible,
+                    isFabExpanded = isFabExpanded,
+                    isDrawingLibraryVisible = isDrawingLibraryVisible,
+                    isDrawingEditorVisible = isDrawingEditorVisible
+                )
+            }
+        ) { partialA, visibility ->
             PartialEditorUiStateB(
                 draft = partialA.draft,
                 settings = partialA.settings,
                 savedDrawings = partialA.savedDrawings,
                 selectedBlockId = partialA.selectedBlockId,
                 isEditorSheetVisible = partialA.isEditorSheetVisible,
-                isToolPaletteVisible = isToolPaletteVisible,
-                isDrawingLibraryVisible = isDrawingLibraryVisible,
-                isDrawingEditorVisible = isDrawingEditorVisible
+                isToolPaletteVisible = visibility.isToolPaletteVisible,
+                isFabVisible = visibility.isFabVisible,
+                isFabExpanded = visibility.isFabExpanded,
+                isDrawingLibraryVisible = visibility.isDrawingLibraryVisible,
+                isDrawingEditorVisible = visibility.isDrawingEditorVisible
             )
         },
         loadingState,
@@ -93,6 +122,8 @@ class EditorViewModel(
             selectedBlockId = partial.selectedBlockId,
             isEditorSheetVisible = partial.isEditorSheetVisible,
             isToolPaletteVisible = partial.isToolPaletteVisible,
+            isFabVisible = partial.isFabVisible,
+            isFabExpanded = partial.isFabExpanded,
             isDrawingLibraryVisible = partial.isDrawingLibraryVisible,
             isDrawingEditorVisible = partial.isDrawingEditorVisible,
             isLoading = isLoading,
@@ -118,13 +149,13 @@ class EditorViewModel(
             val settings = settingsRepository.settings.first()
             val loadedMemo = memoId?.let { memoRepository.getMemoById(it) }
             val draft = loadedMemo ?: MemoDraft.create(
-                defaultAnimation = settings.defaultAnimation,
                 paperStyle = settings.defaultPaperStyle
             )
             existingMemoState.value = loadedMemo != null
             draftState.value = draft
             selectedBlockIdState.value = draft.blocks.firstOrNull()?.id
-            editorSheetVisibleState.value = loadedMemo == null
+            editorSheetVisibleState.value = false
+            fabExpandedState.value = false
             loadingState.value = false
         }
     }
@@ -143,6 +174,7 @@ class EditorViewModel(
         )
         selectedBlockIdState.value = newBlock.id
         editorSheetVisibleState.value = true
+        toolPaletteVisibleState.value = false
     }
 
     fun addImageBlock(imageUri: String, contentAspectRatio: Float) {
@@ -158,8 +190,105 @@ class EditorViewModel(
         )
         selectedBlockIdState.value = newBlock.id
         editorSheetVisibleState.value = true
+        toolPaletteVisibleState.value = false
         drawingLibraryVisibleState.value = false
         drawingEditorVisibleState.value = false
+    }
+
+    fun addListBlock() {
+        val draft = draftState.value ?: return
+        val newBlock = MemoBlock.createList(
+            defaultAnimation = uiState.value.settings.defaultAnimation,
+            y = (0.24f + (draft.blocks.size * 0.1f)).coerceAtMost(0.78f)
+        )
+        draftState.value = draft.copy(
+            blocks = draft.blocks + newBlock,
+            updatedAt = System.currentTimeMillis()
+        )
+        selectedBlockIdState.value = newBlock.id
+        editorSheetVisibleState.value = true
+        toolPaletteVisibleState.value = false
+    }
+
+    fun addHeadingBlock() {
+        val draft = draftState.value ?: return
+        val newBlock = MemoBlock.createHeading(
+            defaultAnimation = uiState.value.settings.defaultAnimation,
+            y = (0.2f + (draft.blocks.size * 0.09f)).coerceAtMost(0.76f)
+        )
+        insertBlockAndOpenEditor(draft = draft, newBlock = newBlock)
+    }
+
+    fun addToggleBlock() {
+        val draft = draftState.value ?: return
+        val newBlock = MemoBlock.createToggle(
+            defaultAnimation = uiState.value.settings.defaultAnimation,
+            y = (0.24f + (draft.blocks.size * 0.08f)).coerceAtMost(0.8f)
+        )
+        insertBlockAndOpenEditor(draft = draft, newBlock = newBlock)
+    }
+
+    fun addQuoteBlock() {
+        val draft = draftState.value ?: return
+        val newBlock = MemoBlock.createQuote(
+            defaultAnimation = uiState.value.settings.defaultAnimation,
+            y = (0.26f + (draft.blocks.size * 0.08f)).coerceAtMost(0.8f)
+        )
+        insertBlockAndOpenEditor(draft = draft, newBlock = newBlock)
+    }
+
+    fun addCodeBlock() {
+        val draft = draftState.value ?: return
+        val newBlock = MemoBlock.createCode(
+            defaultAnimation = uiState.value.settings.defaultAnimation,
+            y = (0.28f + (draft.blocks.size * 0.08f)).coerceAtMost(0.82f)
+        )
+        insertBlockAndOpenEditor(draft = draft, newBlock = newBlock)
+    }
+
+    fun addDividerBlock() {
+        val draft = draftState.value ?: return
+        val newBlock = MemoBlock.createDivider(
+            defaultAnimation = uiState.value.settings.defaultAnimation,
+            y = (0.32f + (draft.blocks.size * 0.06f)).coerceAtMost(0.84f)
+        )
+        insertBlockAndOpenEditor(draft = draft, newBlock = newBlock)
+    }
+
+    fun addLinkCardBlock() {
+        val draft = draftState.value ?: return
+        val newBlock = MemoBlock.createLinkCard(
+            defaultAnimation = uiState.value.settings.defaultAnimation,
+            y = (0.34f + (draft.blocks.size * 0.06f)).coerceAtMost(0.84f)
+        )
+        insertBlockAndOpenEditor(draft = draft, newBlock = newBlock)
+    }
+
+    fun addTableBlock() {
+        val draft = draftState.value ?: return
+        val newBlock = MemoBlock.createTable(
+            defaultAnimation = uiState.value.settings.defaultAnimation,
+            y = (0.34f + (draft.blocks.size * 0.07f)).coerceAtMost(0.84f)
+        )
+        insertBlockAndOpenEditor(draft = draft, newBlock = newBlock)
+    }
+
+    fun addConversationBlock() {
+        val draft = draftState.value ?: return
+        val newBlock = MemoBlock.createConversation(
+            defaultAnimation = uiState.value.settings.defaultAnimation,
+            y = (0.34f + (draft.blocks.size * 0.07f)).coerceAtMost(0.84f)
+        )
+        insertBlockAndOpenEditor(draft = draft, newBlock = newBlock)
+    }
+
+    fun addLatexBlock() {
+        val draft = draftState.value ?: return
+        val newBlock = MemoBlock.createLatex(
+            defaultAnimation = uiState.value.settings.defaultAnimation,
+            y = (0.3f + (draft.blocks.size * 0.07f)).coerceAtMost(0.82f)
+        )
+        insertBlockAndOpenEditor(draft = draft, newBlock = newBlock)
     }
 
     fun selectBlock(blockId: String) {
@@ -167,8 +296,18 @@ class EditorViewModel(
     }
 
     fun openBlockEditor(blockId: String) {
+        val exists = draftState.value?.blocks?.any { it.id == blockId } == true
+        Log.d(
+            EDITOR_VIEW_MODEL_TAG,
+            "openBlockEditor start: blockId=$blockId, exists=$exists, selectedBefore=${selectedBlockIdState.value}, sheetVisibleBefore=${editorSheetVisibleState.value}"
+        )
         selectedBlockIdState.value = blockId
         editorSheetVisibleState.value = true
+        toolPaletteVisibleState.value = false
+        Log.d(
+            EDITOR_VIEW_MODEL_TAG,
+            "openBlockEditor end: selectedAfter=${selectedBlockIdState.value}, sheetVisibleAfter=${editorSheetVisibleState.value}, toolPaletteVisibleAfter=${toolPaletteVisibleState.value}"
+        )
     }
 
     fun startBlockDrag(blockId: String) {
@@ -181,27 +320,63 @@ class EditorViewModel(
     }
 
     fun toggleToolPaletteVisibility() {
-        toolPaletteVisibleState.value = !toolPaletteVisibleState.value
+        toggleFabVisibility()
+    }
+
+    fun toggleFabVisibility() {
+        fabVisibleState.value = !fabVisibleState.value
+        if (fabVisibleState.value) {
+            fabExpandedState.value = true
+        } else {
+            fabExpandedState.value = false
+        }
+    }
+
+    fun toggleFabExpansion() {
+        if (!fabVisibleState.value) {
+            fabVisibleState.value = true
+        }
+        fabExpandedState.value = !fabExpandedState.value
+    }
+
+    fun collapseFabActions() {
+        fabExpandedState.value = false
+    }
+
+    fun showToolPalette() {
+        toolPaletteVisibleState.value = true
+        fabExpandedState.value = false
+        editorSheetVisibleState.value = false
+        drawingLibraryVisibleState.value = false
+        drawingEditorVisibleState.value = false
+    }
+
+    fun hideToolPalette() {
+        toolPaletteVisibleState.value = false
     }
 
     fun openDrawingLibrary() {
         drawingLibraryVisibleState.value = true
         drawingEditorVisibleState.value = false
         editorSheetVisibleState.value = false
+        toolPaletteVisibleState.value = false
     }
 
     fun closeDrawingLibrary() {
         drawingLibraryVisibleState.value = false
+        fabExpandedState.value = false
     }
 
     fun openDrawingEditor() {
         drawingLibraryVisibleState.value = false
         drawingEditorVisibleState.value = true
         editorSheetVisibleState.value = false
+        toolPaletteVisibleState.value = false
     }
 
     fun closeDrawingEditor() {
         drawingEditorVisibleState.value = false
+        fabExpandedState.value = false
     }
 
     fun insertSavedDrawing(drawing: SavedDrawing) {
@@ -257,19 +432,354 @@ class EditorViewModel(
 
     fun showEditorSheet() {
         if (selectedBlockIdState.value == null) {
+            Log.d(EDITOR_VIEW_MODEL_TAG, "showEditorSheet: skipped because selectedBlockId is null")
             emitMessage("Select a block first.")
             return
         }
+        Log.d(
+            EDITOR_VIEW_MODEL_TAG,
+            "showEditorSheet: opening editor for blockId=${selectedBlockIdState.value}"
+        )
         editorSheetVisibleState.value = true
+        toolPaletteVisibleState.value = false
+        fabExpandedState.value = false
+    }
+
+    fun openEditorFromFab() {
+        Log.d(
+            EDITOR_VIEW_MODEL_TAG,
+            "openEditorFromFab: selectedBlockId=${selectedBlockIdState.value}, blockCount=${draftState.value?.blocks?.size ?: 0}"
+        )
+        val currentSelected = selectedBlockIdState.value
+        if (currentSelected != null) {
+            showEditorSheet()
+            return
+        }
+        val firstBlockId = draftState.value?.blocks?.firstOrNull()?.id
+        if (firstBlockId == null) {
+            Log.d(EDITOR_VIEW_MODEL_TAG, "openEditorFromFab: no blocks available, cannot open editor")
+            emitMessage("No block to edit. Add a block first.")
+            return
+        }
+        Log.d(EDITOR_VIEW_MODEL_TAG, "openEditorFromFab: fallback selecting first blockId=$firstBlockId")
+        selectedBlockIdState.value = firstBlockId
+        showEditorSheet()
     }
 
     fun hideEditorSheet() {
+        Log.d(EDITOR_VIEW_MODEL_TAG, "hideEditorSheet: hiding editor sheet")
         editorSheetVisibleState.value = false
+        fabExpandedState.value = false
     }
 
     fun updateSelectedBlockText(text: String) {
         updateSelectedBlock { block ->
-            block.copy(text = text.take(160))
+            val sanitized = text.take(400)
+            val nextPayload = when (val payload = block.payload) {
+                is MemoBlockPayload.Heading -> payload.copy(text = sanitized)
+                is MemoBlockPayload.Quote -> payload.copy(text = sanitized)
+                is MemoBlockPayload.Code -> payload.copy(code = sanitized)
+                is MemoBlockPayload.Latex -> payload.copy(expression = sanitized)
+                is MemoBlockPayload.Toggle -> payload.copy(title = sanitized)
+                else -> payload
+            }
+            block.copy(text = sanitized, payload = nextPayload)
+        }
+    }
+
+    fun updateHeadingLevel(level: HeadingLevel) {
+        updateSelectedBlock { block ->
+            val heading = block.payload as? MemoBlockPayload.Heading ?: return@updateSelectedBlock block
+            block.copy(payload = heading.copy(level = level))
+        }
+    }
+
+    fun updateToggleInitiallyExpanded(initiallyExpanded: Boolean) {
+        updateSelectedBlock { block ->
+            val toggle = block.payload as? MemoBlockPayload.Toggle ?: return@updateSelectedBlock block
+            block.copy(payload = toggle.copy(initiallyExpanded = initiallyExpanded))
+        }
+    }
+
+    fun addToggleChild() {
+        updateSelectedBlock { block ->
+            val toggle = block.payload as? MemoBlockPayload.Toggle ?: return@updateSelectedBlock block
+            block.copy(payload = toggle.copy(childBlocks = toggle.childBlocks + ToggleChildBlock()))
+        }
+    }
+
+    fun updateToggleChildText(childId: String, text: String) {
+        updateSelectedBlock { block ->
+            val toggle = block.payload as? MemoBlockPayload.Toggle ?: return@updateSelectedBlock block
+            block.copy(
+                payload = toggle.copy(
+                    childBlocks = toggle.childBlocks.map { child ->
+                        if (child.id == childId) child.copy(text = text.take(300)) else child
+                    }
+                )
+            )
+        }
+    }
+
+    fun removeToggleChild(childId: String) {
+        updateSelectedBlock { block ->
+            val toggle = block.payload as? MemoBlockPayload.Toggle ?: return@updateSelectedBlock block
+            block.copy(payload = toggle.copy(childBlocks = toggle.childBlocks.filterNot { it.id == childId }))
+        }
+    }
+
+    fun updateCodeLanguage(language: String) {
+        updateSelectedBlock { block ->
+            val code = block.payload as? MemoBlockPayload.Code ?: return@updateSelectedBlock block
+            val supported = supportedCodeLanguages()
+            val normalized = supported.firstOrNull { it.equals(language.trim(), ignoreCase = true) }
+                ?: language.take(40).ifBlank { "Plain Text" }
+            block.copy(payload = code.copy(language = normalized))
+        }
+    }
+
+    fun updateLinkCard(
+        url: String,
+        title: String,
+        description: String,
+        imageUrl: String,
+        faviconUrl: String
+    ) {
+        updateSelectedBlock { block ->
+            val link = block.payload as? MemoBlockPayload.LinkCard ?: return@updateSelectedBlock block
+            block.copy(
+                payload = link.copy(
+                    url = url.take(400),
+                    title = title.take(120),
+                    description = description.take(300),
+                    imageUrl = imageUrl.take(400),
+                    faviconUrl = faviconUrl.take(400)
+                )
+            )
+        }
+    }
+
+    fun updateTableCell(rowId: String, columnIndex: Int, value: String) {
+        updateSelectedBlock { block ->
+            val table = block.payload as? MemoBlockPayload.Table ?: return@updateSelectedBlock block
+            block.copy(
+                payload = table.copy(
+                    rows = table.rows.map { row ->
+                        if (row.id != rowId) {
+                            row
+                        } else {
+                            row.copy(
+                                cells = row.cells.mapIndexed { index, cell ->
+                                    if (index == columnIndex) value.take(120) else cell
+                                }
+                            )
+                        }
+                    }
+                )
+            )
+        }
+    }
+
+    fun addTableRow() {
+        updateSelectedBlock { block ->
+            val table = block.payload as? MemoBlockPayload.Table ?: return@updateSelectedBlock block
+            val columnCount = table.rows.maxOfOrNull { it.cells.size } ?: 2
+            block.copy(payload = table.copy(rows = table.rows + TableRow(cells = List(columnCount) { "" })))
+        }
+    }
+
+    fun removeTableRow(rowId: String) {
+        updateSelectedBlock { block ->
+            val table = block.payload as? MemoBlockPayload.Table ?: return@updateSelectedBlock block
+            val nextRows = table.rows.filterNot { it.id == rowId }
+            block.copy(payload = table.copy(rows = if (nextRows.isEmpty()) table.rows else nextRows))
+        }
+    }
+
+    fun addTableColumn() {
+        updateSelectedBlock { block ->
+            val table = block.payload as? MemoBlockPayload.Table ?: return@updateSelectedBlock block
+            block.copy(
+                payload = table.copy(rows = table.rows.map { row -> row.copy(cells = row.cells + "") })
+            )
+        }
+    }
+
+    fun removeTableColumn(columnIndex: Int) {
+        updateSelectedBlock { block ->
+            val table = block.payload as? MemoBlockPayload.Table ?: return@updateSelectedBlock block
+            val hasAnyRemovable = table.rows.any { it.cells.size > 1 && columnIndex in it.cells.indices }
+            if (!hasAnyRemovable) return@updateSelectedBlock block
+            block.copy(
+                payload = table.copy(
+                    rows = table.rows.map { row ->
+                        if (row.cells.size <= 1 || columnIndex !in row.cells.indices) {
+                            row
+                        } else {
+                            row.copy(cells = row.cells.filterIndexed { index, _ -> index != columnIndex })
+                        }
+                    }
+                )
+            )
+        }
+    }
+
+    fun addConversationItem() {
+        updateSelectedBlock { block ->
+            val conversation = block.payload as? MemoBlockPayload.Conversation ?: return@updateSelectedBlock block
+            block.copy(payload = conversation.copy(items = conversation.items + ConversationItem()))
+        }
+    }
+
+    fun updateConversationItem(
+        itemId: String,
+        speaker: String,
+        text: String,
+        role: ConversationRole
+    ) {
+        updateSelectedBlock { block ->
+            val conversation = block.payload as? MemoBlockPayload.Conversation ?: return@updateSelectedBlock block
+            block.copy(
+                payload = conversation.copy(
+                    items = conversation.items.map { item ->
+                        if (item.id == itemId) {
+                            item.copy(
+                                speaker = speaker.take(60),
+                                text = text.take(240),
+                                role = role
+                            )
+                        } else {
+                            item
+                        }
+                    }
+                )
+            )
+        }
+    }
+
+    fun removeConversationItem(itemId: String) {
+        updateSelectedBlock { block ->
+            val conversation = block.payload as? MemoBlockPayload.Conversation ?: return@updateSelectedBlock block
+            val nextItems = conversation.items.filterNot { it.id == itemId }
+            block.copy(payload = conversation.copy(items = if (nextItems.isEmpty()) conversation.items else nextItems))
+        }
+    }
+
+    fun addListItem() {
+        updateSelectedListBlock { block ->
+            listBlockEditorUseCase.addListItem(block)
+        }
+    }
+
+    fun updateListItemText(itemId: String, text: String) {
+        updateSelectedListBlock { block ->
+            listBlockEditorUseCase.updateListItemText(block, itemId, text.take(160))
+        }
+    }
+
+    fun removeListItem(itemId: String) {
+        updateSelectedListBlock { block ->
+            listBlockEditorUseCase.removeListItem(block, itemId)
+        }
+    }
+
+    fun toggleListItemChecked(itemId: String) {
+        updateSelectedListBlock { block ->
+            listBlockEditorUseCase.toggleListItemChecked(block, itemId)
+        }
+    }
+
+    fun toggleListItemCheckedFromCanvas(blockId: String, itemId: String) {
+        val draft = draftState.value ?: return
+        draftState.value = draft.copy(
+            blocks = draft.blocks.map { block ->
+                if (block.id == blockId && block.type == MemoBlockType.List) {
+                    listBlockEditorUseCase.toggleListItemChecked(block, itemId)
+                } else {
+                    block
+                }
+            },
+            updatedAt = System.currentTimeMillis()
+        )
+        selectedBlockIdState.value = blockId
+    }
+
+    fun toggleListItemExpandedFromCanvas(blockId: String, itemId: String) {
+        val draft = draftState.value ?: return
+        draftState.value = draft.copy(
+            blocks = draft.blocks.map { block ->
+                if (block.id == blockId && block.type == MemoBlockType.List) {
+                    listBlockEditorUseCase.toggleListItemExpanded(block, itemId)
+                } else {
+                    block
+                }
+            },
+            updatedAt = System.currentTimeMillis()
+        )
+        selectedBlockIdState.value = blockId
+    }
+
+    fun toggleToggleExpandedFromCanvas(blockId: String) {
+        val draft = draftState.value ?: return
+        draftState.value = draft.copy(
+            blocks = draft.blocks.map { block ->
+                if (block.id != blockId || block.type != MemoBlockType.Toggle) {
+                    block
+                } else {
+                    val toggle = block.payload as? MemoBlockPayload.Toggle ?: MemoBlockPayload.Toggle()
+                    block.copy(payload = toggle.copy(initiallyExpanded = !toggle.initiallyExpanded))
+                }
+            },
+            updatedAt = System.currentTimeMillis()
+        )
+        selectedBlockIdState.value = blockId
+    }
+
+    fun updateListItemType(itemId: String, type: ListItemType) {
+        updateSelectedListBlock { block ->
+            listBlockEditorUseCase.updateListItemType(block, itemId, type)
+        }
+    }
+
+    fun increaseListItemIndent(itemId: String) {
+        updateSelectedListBlock { block ->
+            listBlockEditorUseCase.increaseIndent(block, itemId)
+        }
+    }
+
+    fun decreaseListItemIndent(itemId: String) {
+        updateSelectedListBlock { block ->
+            listBlockEditorUseCase.decreaseIndent(block, itemId)
+        }
+    }
+
+    fun moveListItemUp(itemId: String) {
+        updateSelectedListBlock { block ->
+            val index = block.listItems.indexOfFirst { it.id == itemId }
+            if (index <= 0) block else listBlockEditorUseCase.moveListItem(block, index, index - 1)
+        }
+    }
+
+    fun moveListItemDown(itemId: String) {
+        updateSelectedListBlock { block ->
+            val index = block.listItems.indexOfFirst { it.id == itemId }
+            if (index < 0 || index >= block.listItems.lastIndex) {
+                block
+            } else {
+                listBlockEditorUseCase.moveListItem(block, index, index + 1)
+            }
+        }
+    }
+
+    fun toggleListItemExpanded(itemId: String) {
+        updateSelectedListBlock { block ->
+            listBlockEditorUseCase.toggleListItemExpanded(block, itemId)
+        }
+    }
+
+    fun updateSelectedListAppearance(appearance: ListAppearance) {
+        updateSelectedListBlock { block ->
+            listBlockEditorUseCase.updateListAppearance(block, appearance)
         }
     }
 
@@ -389,21 +899,19 @@ class EditorViewModel(
         val draft = draftState.value ?: return
         val selectedId = selectedBlockIdState.value ?: return
         val remaining = draft.blocks.filterNot { it.id == selectedId }
-        val fallback = remaining.ifEmpty {
-            listOf(MemoBlock.createText(defaultAnimation = uiState.value.settings.defaultAnimation))
-        }
+        val shouldKeepEditorOpen = editorSheetVisibleState.value && remaining.isNotEmpty()
         draftState.value = draft.copy(
-            blocks = fallback,
+            blocks = remaining,
             updatedAt = System.currentTimeMillis()
         )
-        selectedBlockIdState.value = fallback.firstOrNull()?.id
-        editorSheetVisibleState.value = fallback.size == 1 && fallback.first().text.isBlank()
+        selectedBlockIdState.value = remaining.firstOrNull()?.id
+        editorSheetVisibleState.value = shouldKeepEditorOpen
     }
 
     fun saveMemo() {
         val draft = draftState.value ?: return
         if (!draft.hasContent) {
-            emitMessage("Add text, image, or handwriting before saving.")
+            emitMessage("Add at least one non-empty block before saving.")
             return
         }
         executeAction {
@@ -421,13 +929,12 @@ class EditorViewModel(
                 memoRepository.deleteMemo(draft.id)
             }
             val freshDraft = MemoDraft.create(
-                defaultAnimation = uiState.value.settings.defaultAnimation,
                 paperStyle = uiState.value.settings.defaultPaperStyle
             )
             draftState.value = freshDraft
             existingMemoState.value = false
             selectedBlockIdState.value = freshDraft.blocks.firstOrNull()?.id
-            editorSheetVisibleState.value = true
+            editorSheetVisibleState.value = false
             drawingLibraryVisibleState.value = false
             drawingEditorVisibleState.value = false
             effects.emit(EditorEffect.PerformHaptic)
@@ -437,13 +944,14 @@ class EditorViewModel(
 
     fun createNewMemo() {
         val freshDraft = MemoDraft.create(
-            defaultAnimation = uiState.value.settings.defaultAnimation,
             paperStyle = uiState.value.settings.defaultPaperStyle
         )
         draftState.value = freshDraft
         existingMemoState.value = false
         selectedBlockIdState.value = freshDraft.blocks.firstOrNull()?.id
-        editorSheetVisibleState.value = true
+        editorSheetVisibleState.value = false
+        toolPaletteVisibleState.value = false
+        fabExpandedState.value = false
         drawingLibraryVisibleState.value = false
         drawingEditorVisibleState.value = false
     }
@@ -451,7 +959,7 @@ class EditorViewModel(
     fun exportGif(darkTheme: Boolean) {
         val draft = draftState.value ?: return
         if (!draft.hasContent) {
-            emitMessage("Add text, image, or handwriting before exporting.")
+            emitMessage("Add at least one non-empty block before exporting.")
             return
         }
         executeAction {
@@ -470,7 +978,7 @@ class EditorViewModel(
     fun exportPng(darkTheme: Boolean) {
         val draft = draftState.value ?: return
         if (!draft.hasContent) {
-            emitMessage("Add text, image, or handwriting before exporting.")
+            emitMessage("Add at least one non-empty block before exporting.")
             return
         }
         executeAction {
@@ -497,6 +1005,16 @@ class EditorViewModel(
         )
     }
 
+    private fun updateSelectedListBlock(transform: (MemoBlock) -> MemoBlock) {
+        updateSelectedBlock { block ->
+            if (block.type == MemoBlockType.List) {
+                transform(block)
+            } else {
+                block
+            }
+        }
+    }
+
     private fun executeAction(block: suspend () -> Unit) {
         viewModelScope.launch {
             workingState.value = true
@@ -516,6 +1034,16 @@ class EditorViewModel(
 
     private fun minimumBlockYFor(paperStyle: PaperStyle): Float {
         return if (paperStyle.supportsTopAlignedBlocks) 0.02f else 0.14f
+    }
+
+    private fun insertBlockAndOpenEditor(draft: MemoDraft, newBlock: MemoBlock) {
+        draftState.value = draft.copy(
+            blocks = draft.blocks + newBlock,
+            updatedAt = System.currentTimeMillis()
+        )
+        selectedBlockIdState.value = newBlock.id
+        editorSheetVisibleState.value = true
+        toolPaletteVisibleState.value = false
     }
 
     private suspend fun insertDrawingBlock(
@@ -539,6 +1067,7 @@ class EditorViewModel(
         )
         selectedBlockIdState.value = newBlock.id
         editorSheetVisibleState.value = true
+        toolPaletteVisibleState.value = false
         drawingLibraryVisibleState.value = false
         drawingEditorVisibleState.value = false
         effects.emit(EditorEffect.PerformHaptic)
@@ -571,14 +1100,14 @@ private fun MemoBlock.scaledBy(
     val minScale = buildList {
         add(MIN_BLOCK_FRACTION / safeWidth)
         add(MIN_BLOCK_FRACTION / safeHeight)
-        if (isText) {
+        if (supportsTextSizing) {
             add(TextStyleSetting.MIN_FONT_SIZE / safeFontSize)
         }
     }.maxOrNull() ?: 1f
     val maxScale = buildList {
         add(MAX_BLOCK_FRACTION / safeWidth)
         add(MAX_BLOCK_FRACTION / safeHeight)
-        if (isText) {
+        if (supportsTextSizing) {
             add(TextStyleSetting.MAX_FONT_SIZE / safeFontSize)
         }
     }.minOrNull() ?: 1f
@@ -586,7 +1115,7 @@ private fun MemoBlock.scaledBy(
     val scaledWidth = widthFraction * appliedScale
     val scaledHeight = heightFraction * appliedScale
 
-    val adjustedY = if (isText) {
+    val adjustedY = if (supportsTextSizing) {
         val centerY = normalizedY + (heightFraction / 2f)
         (centerY - (scaledHeight / 2f)).coerceIn(minimumY, 0.9f)
     } else {
@@ -597,7 +1126,7 @@ private fun MemoBlock.scaledBy(
         normalizedY = adjustedY,
         widthFraction = scaledWidth,
         heightFraction = scaledHeight,
-        textStyle = if (isText) {
+        textStyle = if (supportsTextSizing) {
             textStyle.copy(fontSize = textStyle.fontSize * appliedScale)
         } else {
             textStyle
@@ -623,6 +1152,19 @@ private data class PartialEditorUiStateB(
     val selectedBlockId: String?,
     val isEditorSheetVisible: Boolean,
     val isToolPaletteVisible: Boolean,
+    val isFabVisible: Boolean,
+    val isFabExpanded: Boolean,
     val isDrawingLibraryVisible: Boolean,
     val isDrawingEditorVisible: Boolean
 )
+
+private data class PartialEditorVisibility(
+    val isToolPaletteVisible: Boolean,
+    val isFabVisible: Boolean,
+    val isFabExpanded: Boolean,
+    val isDrawingLibraryVisible: Boolean,
+    val isDrawingEditorVisible: Boolean
+)
+
+private const val EDITOR_VIEW_MODEL_TAG = "EditorViewModel"
+

@@ -12,6 +12,8 @@ data class EditorUiState(
     val selectedBlockId: String? = null,
     val isEditorSheetVisible: Boolean = false,
     val isToolPaletteVisible: Boolean = true,
+    val isFabVisible: Boolean = true,
+    val isFabExpanded: Boolean = true,
     val isDrawingLibraryVisible: Boolean = false,
     val isDrawingEditorVisible: Boolean = false,
     val isLoading: Boolean = true,
