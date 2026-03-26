@@ -34,5 +34,9 @@ class DefaultSettingsRepository(
         storage.updateDefaultPaperStyle(paperStyle)
     }
 
+    override suspend fun updateRecentCodeLanguages(languages: List<String>) {
+        storage.updateRecentCodeLanguages(languages)
+    }
+
     override fun currentValue(): AppSettings = AppSettings()
 }

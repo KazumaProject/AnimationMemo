@@ -11,6 +11,7 @@ import com.kazumaproject.animationswipememo.domain.model.AppSettings
 import com.kazumaproject.animationswipememo.domain.model.GifQuality
 import com.kazumaproject.animationswipememo.domain.model.PaperStyle
 import com.kazumaproject.animationswipememo.domain.model.ThemeMode
+import com.kazumaproject.animationswipememo.ui.components.render.supportedCodeLanguages
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -51,6 +52,12 @@ class SettingsPreferencesStorage(private val context: Context) {
         }
     }
 
+    suspend fun updateRecentCodeLanguages(languages: List<String>) {
+        context.dataStore.edit { preferences ->
+            preferences[Keys.RECENT_CODE_LANGUAGES] = languages.joinToString(separator = "\n")
+        }
+    }
+
     private fun Preferences.toAppSettings(): AppSettings {
         return AppSettings(
             defaultAnimation = enumValueOfOrDefault(
@@ -66,8 +73,21 @@ class SettingsPreferencesStorage(private val context: Context) {
                 ThemeMode.System
             ),
             editorSheetOpacity = this[Keys.EDITOR_SHEET_OPACITY] ?: 0.88f,
-            defaultPaperStyle = PaperStyle.fromName(this[Keys.DEFAULT_PAPER_STYLE])
+            defaultPaperStyle = PaperStyle.fromName(this[Keys.DEFAULT_PAPER_STYLE]),
+            recentCodeLanguages = decodeRecentCodeLanguages(this[Keys.RECENT_CODE_LANGUAGES])
         )
+    }
+
+    private fun decodeRecentCodeLanguages(rawValue: String?): List<String> {
+        if (rawValue.isNullOrBlank()) return emptyList()
+        val supported = supportedCodeLanguages()
+        return rawValue
+            .split('\n')
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .mapNotNull { value -> supported.firstOrNull { it.equals(value, ignoreCase = true) } }
+            .distinctBy { it.lowercase() }
+            .take(5)
     }
 
     private inline fun <reified T : Enum<T>> enumValueOfOrDefault(
@@ -85,5 +105,6 @@ class SettingsPreferencesStorage(private val context: Context) {
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val EDITOR_SHEET_OPACITY = floatPreferencesKey("editor_sheet_opacity")
         val DEFAULT_PAPER_STYLE = stringPreferencesKey("default_paper_style")
+        val RECENT_CODE_LANGUAGES = stringPreferencesKey("recent_code_languages")
     }
 }

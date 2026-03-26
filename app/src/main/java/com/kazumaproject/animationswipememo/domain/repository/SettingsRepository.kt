@@ -14,5 +14,6 @@ interface SettingsRepository {
     suspend fun updateThemeMode(themeMode: ThemeMode)
     suspend fun updateEditorSheetOpacity(opacity: Float)
     suspend fun updateDefaultPaperStyle(paperStyle: PaperStyle)
+    suspend fun updateRecentCodeLanguages(languages: List<String>)
     fun currentValue(): AppSettings
 }

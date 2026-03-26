@@ -16,12 +16,19 @@ data class EditorUiState(
     val isFabExpanded: Boolean = true,
     val isDrawingLibraryVisible: Boolean = false,
     val isDrawingEditorVisible: Boolean = false,
+    val codeFullscreenBlockId: String? = null,
     val isLoading: Boolean = true,
     val isWorking: Boolean = false,
     val isExistingMemo: Boolean = false
 ) {
     val selectedBlock: MemoBlock?
         get() = draft?.blocks?.firstOrNull { it.id == selectedBlockId }
+
+    val isCodeFullscreenVisible: Boolean
+        get() = codeFullscreenBlockId != null
+
+    val codeFullscreenBlock: MemoBlock?
+        get() = draft?.blocks?.firstOrNull { it.id == codeFullscreenBlockId }
 }
 
 sealed interface EditorEffect {

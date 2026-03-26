@@ -32,6 +32,8 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -61,11 +63,7 @@ import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -91,7 +89,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -103,6 +100,8 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kazumaproject.animationswipememo.domain.model.AnimationStyle
 import com.kazumaproject.animationswipememo.domain.model.ConversationRole
@@ -281,6 +280,7 @@ fun EditorScreen(
                 onUpdateToggleChildText = viewModel::updateToggleChildText,
                 onRemoveToggleChild = viewModel::removeToggleChild,
                 onCodeLanguageChange = viewModel::updateCodeLanguage,
+                recentCodeLanguages = uiState.settings.recentCodeLanguages,
                 onUpdateLinkCard = viewModel::updateLinkCard,
                 onUpdateTableCell = viewModel::updateTableCell,
                 onAddTableRow = viewModel::addTableRow,
@@ -367,19 +367,21 @@ fun EditorScreen(
             .pointerInput(
                 uiState.selectedBlockId,
                 uiState.isEditorSheetVisible,
+                uiState.isCodeFullscreenVisible,
                 uiState.isFabExpanded,
                 uiState.isToolPaletteVisible,
                 uiState.isDrawingLibraryVisible,
                 uiState.isDrawingEditorVisible
             ) {
                 awaitEachGesture {
-                    val down = awaitFirstDown(
+                    awaitFirstDown(
                         requireUnconsumed = false,
                         pass = PointerEventPass.Initial
                     )
                     val up = waitForUpOrCancellation(pass = PointerEventPass.Final)
                     if (up != null && !up.isConsumed) {
                         if (
+                            uiState.isCodeFullscreenVisible ||
                             uiState.isFabExpanded ||
                             uiState.isToolPaletteVisible ||
                             uiState.isDrawingLibraryVisible ||
@@ -512,8 +514,23 @@ fun EditorScreen(
                     onToggleListItemCheckedOnCanvas = viewModel::toggleListItemCheckedFromCanvas,
                     onToggleListItemExpandedOnCanvas = viewModel::toggleListItemExpandedFromCanvas,
                     onToggleBlockExpandedOnCanvas = viewModel::toggleToggleExpandedFromCanvas,
+                    onCodeBlockLongPress = { blockId ->
+                        dismissTransientInput()
+                        viewModel.openCodeFullscreen(blockId)
+                    }
                 )
             }
+        }
+
+        val fullscreenCodeBlock = uiState.codeFullscreenBlock
+        if (uiState.isCodeFullscreenVisible && fullscreenCodeBlock?.type == MemoBlockType.Code) {
+            FullscreenCodeEditorDialog(
+                block = fullscreenCodeBlock,
+                onClose = {
+                    dismissTransientInput()
+                    viewModel.closeCodeFullscreen()
+                }
+            )
         }
 
         if (uiState.isDrawingEditorVisible) {
@@ -546,7 +563,8 @@ private fun EditorCanvasContent(
     onBlockScale: (String, Float) -> Unit,
     onToggleListItemCheckedOnCanvas: (String, String) -> Unit,
     onToggleListItemExpandedOnCanvas: (String, String) -> Unit,
-    onToggleBlockExpandedOnCanvas: (String) -> Unit
+    onToggleBlockExpandedOnCanvas: (String) -> Unit,
+    onCodeBlockLongPress: (String) -> Unit
 ) {
     val draft = uiState.draft ?: return
     val transition = rememberInfiniteTransition(label = "canvasAnimation")
@@ -583,8 +601,115 @@ private fun EditorCanvasContent(
             onBlockScale = onBlockScale,
             onToggleListItemChecked = onToggleListItemCheckedOnCanvas,
             onToggleListItemExpanded = onToggleListItemExpandedOnCanvas,
-            onToggleBlockExpanded = onToggleBlockExpandedOnCanvas
+            onToggleBlockExpanded = onToggleBlockExpandedOnCanvas,
+            onCodeBlockLongPress = onCodeBlockLongPress
         )
+    }
+}
+
+@Composable
+private fun FullscreenCodeEditorDialog(
+    block: com.kazumaproject.animationswipememo.domain.model.MemoBlock,
+    onClose: () -> Unit
+) {
+    val code = block.payload as? MemoBlockPayload.Code ?: MemoBlockPayload.Code()
+    val codeText = code.code.ifBlank { "// Empty code block" }
+    val codeLines = remember(codeText) { codeText.split('\n') }
+    val verticalScrollState = rememberScrollState()
+    val horizontalScrollState = rememberScrollState()
+    val lineNumberGutterWidth = remember(codeLines.size) {
+        when (codeLines.size.toString().length) {
+            1 -> 40.dp
+            2 -> 52.dp
+            3 -> 60.dp
+            4 -> 68.dp
+            else -> 76.dp
+        }
+    }
+    Dialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding(),
+            color = MaterialTheme.colorScheme.surface
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Code editor",
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                    TextButton(onClick = onClose) {
+                        Text("Done")
+                    }
+                }
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 12.dp, vertical = 10.dp)
+                            .horizontalScroll(horizontalScrollState)
+                            .verticalScroll(verticalScrollState)
+                    ) {
+                        Column {
+                            codeLines.forEachIndexed { index, line ->
+                            Row(
+                                modifier = Modifier,
+                                verticalAlignment = Alignment.Top
+                            ) {
+                                Text(
+                                    text = (index + 1).toString(),
+                                    modifier = Modifier
+                                        .width(lineNumberGutterWidth)
+                                        .padding(end = 6.dp),
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.End
+                                    ),
+                                    softWrap = false,
+                                    overflow = TextOverflow.Clip
+                                )
+                                Text(
+                                    text = highlightCode(
+                                        language = code.language,
+                                        code = line.ifEmpty { " " },
+                                        defaultColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                    ),
+                                    modifier = Modifier
+                                        .padding(start = 10.dp),
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    ),
+                                    softWrap = false,
+                                    overflow = TextOverflow.Clip
+                                )
+                            }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -876,6 +1001,7 @@ private fun BlockEditorSheet(
     onUpdateToggleChildText: (String, String) -> Unit,
     onRemoveToggleChild: (String) -> Unit,
     onCodeLanguageChange: (String) -> Unit,
+    recentCodeLanguages: List<String>,
     onUpdateLinkCard: (String, String, String, String, String) -> Unit,
     onUpdateTableCell: (String, Int, String) -> Unit,
     onAddTableRow: () -> Unit,
@@ -1040,6 +1166,7 @@ private fun BlockEditorSheet(
                 val code = block.payload as? MemoBlockPayload.Code ?: MemoBlockPayload.Code()
                 CodeLanguageSelector(
                     selectedLanguage = code.language,
+                    recentLanguages = recentCodeLanguages,
                     onLanguageSelected = onCodeLanguageChange
                 )
                 OutlinedTextField(
@@ -1309,59 +1436,147 @@ private fun BlockEditorSheet(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CodeLanguageSelector(
     selectedLanguage: String,
+    recentLanguages: List<String>,
     onLanguageSelected: (String) -> Unit
 ) {
     val allLanguages = remember { supportedCodeLanguages() }
-    var expanded by rememberSaveable { mutableStateOf(false) }
-    var query by rememberSaveable(selectedLanguage) {
-        mutableStateOf(selectedLanguage.ifBlank { allLanguages.firstOrNull().orEmpty() })
+    val focusManager = LocalFocusManager.current
+    var isOtherExpanded by rememberSaveable { mutableStateOf(false) }
+    var localRecentLanguages by rememberSaveable { mutableStateOf(emptyList<String>()) }
+
+    val primaryLanguages = remember(allLanguages) {
+        listOf(
+            "Kotlin",
+            "Java",
+            "Python",
+            "JavaScript",
+            "TypeScript",
+            "TSX",
+            "HTML",
+            "CSS",
+            "JSON",
+            "SQL"
+        ).filter { it in allLanguages }
     }
 
-    val filtered = remember(query, allLanguages) {
-        val normalized = query.trim()
-        if (normalized.isBlank()) {
-            allLanguages
-        } else {
-            allLanguages.filter { it.contains(normalized, ignoreCase = true) }
+    fun pushRecent(language: String) {
+        val normalized = language.trim()
+        if (normalized.isBlank()) return
+        localRecentLanguages = buildList {
+            add(normalized)
+            localRecentLanguages.forEach { existing ->
+                if (!existing.equals(normalized, ignoreCase = true)) add(existing)
+            }
+        }.take(5)
+    }
+
+    LaunchedEffect(recentLanguages) {
+        localRecentLanguages = recentLanguages
+            .mapNotNull { value -> allLanguages.firstOrNull { it.equals(value, ignoreCase = true) } }
+            .distinctBy { it.lowercase() }
+            .take(5)
+    }
+
+    LaunchedEffect(selectedLanguage) {
+        if (selectedLanguage.isNotBlank()) {
+            pushRecent(selectedLanguage)
         }
     }
 
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = !expanded }
+    val otherLanguages = remember(allLanguages, localRecentLanguages, primaryLanguages) {
+        allLanguages.filter { language ->
+            localRecentLanguages.none { it.equals(language, ignoreCase = true) } &&
+                primaryLanguages.none { it.equals(language, ignoreCase = true) }
+        }
+    }
+
+    fun onChipClick(language: String) {
+        pushRecent(language)
+        onLanguageSelected(language)
+        focusManager.clearFocus(force = true)
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        OutlinedTextField(
-            value = query,
-            onValueChange = {
-                query = it
-                expanded = true
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .menuAnchor(),
-            label = { Text("Language") },
-            singleLine = true,
-            trailingIcon = {
-                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
-            }
+        Text(
+            text = "Language",
+            style = MaterialTheme.typography.titleMedium
         )
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false }
+
+        if (localRecentLanguages.isNotEmpty()) {
+            Text(
+                text = "Recent",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                localRecentLanguages.forEach { language ->
+                    FilterChip(
+                        selected = language.equals(selectedLanguage, ignoreCase = true),
+                        onClick = { onChipClick(language) },
+                        label = { Text(language) }
+                    )
+                }
+            }
+        }
+
+        Text(
+            text = "Popular",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            filtered.forEach { language ->
-                DropdownMenuItem(
-                    text = { Text(language) },
-                    onClick = {
-                        query = language
-                        onLanguageSelected(language)
-                        expanded = false
-                    }
+            primaryLanguages.forEach { language ->
+                FilterChip(
+                    selected = language.equals(selectedLanguage, ignoreCase = true),
+                    onClick = { onChipClick(language) },
+                    label = { Text(language) }
                 )
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Other",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            TextButton(onClick = { isOtherExpanded = !isOtherExpanded }) {
+                Text(if (isOtherExpanded) "Hide" else "Show all (${otherLanguages.size})")
+            }
+        }
+
+        if (isOtherExpanded) {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                otherLanguages.forEach { language ->
+                    FilterChip(
+                        selected = language.equals(selectedLanguage, ignoreCase = true),
+                        onClick = { onChipClick(language) },
+                        label = { Text(language) }
+                    )
+                }
             }
         }
     }
