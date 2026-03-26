@@ -12,6 +12,7 @@ import android.os.Build
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
+import android.text.TextUtils
 import com.kazumaproject.animationswipememo.domain.animation.MemoAnimationEngine
 import com.kazumaproject.animationswipememo.domain.model.fitContentSize
 import com.kazumaproject.animationswipememo.domain.model.MemoBlock
@@ -383,10 +384,22 @@ class MemoBitmapFrameRenderer(
             }
         }
 
+        val quotePayload = block.payload as? MemoBlockPayload.Quote
+        if (quotePayload != null) {
+            drawQuotePayloadBlock(
+                canvas = canvas,
+                cardRect = cardRect,
+                block = block,
+                progress = progress,
+                darkTheme = darkTheme,
+                text = quotePayload.text.ifBlank { "Quote" }
+            )
+            return
+        }
+
         val text = when (val payload = block.payload) {
             is MemoBlockPayload.Heading -> payload.text
             is MemoBlockPayload.Toggle -> payload.title
-            is MemoBlockPayload.Quote -> payload.text
             is MemoBlockPayload.Code -> payload.code
             is MemoBlockPayload.LinkCard -> payload.title.ifBlank { payload.url }
             is MemoBlockPayload.Table -> "${payload.rows.size} rows"
@@ -401,6 +414,88 @@ class MemoBitmapFrameRenderer(
             progress = progress,
             darkTheme = darkTheme
         )
+    }
+
+    private fun drawQuotePayloadBlock(
+        canvas: Canvas,
+        cardRect: RectF,
+        block: MemoBlock,
+        progress: Float,
+        darkTheme: Boolean,
+        text: String
+    ) {
+        val frame = MemoAnimationEngine.frameAt(block.animationStyle, block.text, progress)
+        val frameAlpha = frame.alpha.coerceIn(0f, 1f)
+        val availableWidth = (cardRect.width() * block.widthFraction).coerceAtLeast(120f)
+        val minimumHeight = (cardRect.height() * block.heightFraction).coerceAtLeast(56f)
+        val innerPaddingStart = max(16f, availableWidth * 0.08f)
+        val innerPaddingEnd = max(10f, availableWidth * 0.05f)
+        val innerPaddingVertical = max(8f, cardRect.width() * 0.012f)
+        val textWidth = (availableWidth - innerPaddingStart - innerPaddingEnd).roundToInt().coerceAtLeast(40)
+        val resolvedTextColor = block.textStyle.resolvedTextColor(darkTheme)
+        val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = resolvedTextColor
+            alpha = (frameAlpha * 255f).toInt()
+            textSize = (cardRect.width() * 0.067f) * (block.textStyle.fontSize / 28f)
+            typeface = block.textStyle.toStyledTypeface(context)
+            isUnderlineText = block.textStyle.isUnderline
+            isSubpixelText = true
+            isFakeBoldText = block.textStyle.isBold && typeface.style == Typeface.NORMAL
+        }
+        val layout = StaticLayout.Builder
+            .obtain(text, 0, text.length, textPaint, textWidth)
+            .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+            .setLineSpacing(cardRect.width() * 0.008f, 1.08f)
+            .setEllipsize(TextUtils.TruncateAt.END)
+            .setMaxLines(4)
+            .setIncludePad(false)
+            .build()
+
+        val quoteHeight = max(minimumHeight, layout.height + (innerPaddingVertical * 2f))
+        val centerX = cardRect.left + block.normalizedX.coerceIn(0.08f, 0.92f) * cardRect.width()
+        val centerY = cardRect.top + block.normalizedY.coerceIn(0.12f, 0.9f) * cardRect.height()
+        val quoteLeft = centerX - (availableWidth / 2f)
+        val quoteTop = centerY - (quoteHeight / 2f)
+        val quoteRect = RectF(0f, 0f, availableWidth, quoteHeight)
+        val corner = max(10f, cardRect.width() * 0.018f)
+        val quoteBackgroundColor = if (darkTheme) 0x66434343 else 0x73DAD6CE
+        val quoteBarColor = if (darkTheme) 0xFF95A9F6.toInt() else 0xFF5B6ED6.toInt()
+        val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = applyAlpha(quoteBackgroundColor, frameAlpha)
+            style = Paint.Style.FILL
+        }
+        val barInset = innerPaddingVertical
+        val barX = max(8f, availableWidth * 0.04f)
+        val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = applyAlpha(quoteBarColor, frameAlpha)
+            style = Paint.Style.STROKE
+            strokeWidth = max(3f, cardRect.width() * 0.0045f)
+            strokeCap = Paint.Cap.ROUND
+        }
+
+        canvas.save()
+        canvas.translate(quoteLeft + frame.offsetXPx, quoteTop + frame.offsetYPx)
+        canvas.scale(frame.scale, frame.scale, availableWidth / 2f, quoteHeight / 2f)
+        canvas.rotate(frame.rotationDeg, availableWidth / 2f, quoteHeight / 2f)
+        canvas.drawRoundRect(quoteRect, corner, corner, backgroundPaint)
+        canvas.drawLine(
+            barX,
+            barInset,
+            barX,
+            quoteHeight - barInset,
+            barPaint
+        )
+        canvas.save()
+        canvas.translate(innerPaddingStart, innerPaddingVertical)
+        layout.draw(canvas)
+        canvas.restore()
+        canvas.restore()
+    }
+
+    private fun applyAlpha(argb: Int, alphaScale: Float): Int {
+        val baseAlpha = (argb ushr 24) and 0xFF
+        val scaledAlpha = (baseAlpha * alphaScale.coerceIn(0f, 1f)).roundToInt().coerceIn(0, 255)
+        return (argb and 0x00FFFFFF) or (scaledAlpha shl 24)
     }
 
     private fun loadBitmap(

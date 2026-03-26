@@ -671,6 +671,7 @@ private fun PayloadTextBlockView(
         is MemoBlockPayload.Latex -> payload.expression.ifBlank { "LaTeX" }
         else -> block.text.ifBlank { block.type.name }
     }
+    val isQuotePayload = block.payload is MemoBlockPayload.Quote
     val textStyle = when (val payload = block.payload) {
         is MemoBlockPayload.Heading -> textStyleFor(block, glowRadius = 0f, darkTheme = darkTheme).copy(
             fontSize = when (payload.level) {
@@ -715,6 +716,11 @@ private fun PayloadTextBlockView(
                     darkTheme = darkTheme,
                     modifier = Modifier.fillMaxWidth()
                 )
+            } else if (isQuotePayload) {
+                QuotePayloadText(
+                    text = renderedText,
+                    textStyle = textStyle
+                )
             } else {
                 Text(
                     text = renderedText,
@@ -726,6 +732,42 @@ private fun PayloadTextBlockView(
             }
         }
     )
+}
+
+@Composable
+private fun QuotePayloadText(
+    text: AnnotatedString,
+    textStyle: TextStyle
+) {
+    val quoteBackground = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+    val quoteBarColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(quoteBackground)
+            .drawBehind {
+                val inset = 8.dp.toPx()
+                val strokeWidth = 3.dp.toPx()
+                val x = inset
+                drawLine(
+                    color = quoteBarColor,
+                    start = Offset(x, inset),
+                    end = Offset(x, size.height - inset),
+                    strokeWidth = strokeWidth
+                )
+            }
+            .padding(start = 16.dp, end = 10.dp, top = 8.dp, bottom = 8.dp)
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.fillMaxWidth(),
+            style = textStyle,
+            maxLines = 4,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+        )
+    }
 }
 
 @Composable
