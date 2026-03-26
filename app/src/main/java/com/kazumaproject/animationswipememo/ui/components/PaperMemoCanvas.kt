@@ -2,6 +2,7 @@ package com.kazumaproject.animationswipememo.ui.components
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -125,27 +126,63 @@ fun PaperMemoCanvas(
                         requireUnconsumed = false,
                         pass = PointerEventPass.Final
                     )
-                    if (down.isConsumed) {
+                    val downTouchedBlock = hitTestBlock(
+                        blocks = memo.blocks,
+                        tapPosition = down.position,
+                        canvasWidthPx = canvasWidthPx,
+                        canvasHeightPx = canvasHeightPx,
+                        progress = progress,
+                        density = density
+                    )
+                    Log.d(
+                        PAPER_MEMO_CANVAS_TAG,
+                        "tap down: consumed=${down.isConsumed}, blockId=${downTouchedBlock?.id}, blockType=${downTouchedBlock?.type}"
+                    )
+                    if (down.isConsumed && downTouchedBlock?.type != MemoBlockType.Latex) {
+                        Log.d(PAPER_MEMO_CANVAS_TAG, "tap ignored at down: consumed by child and not LaTeX")
                         waitForUpOrCancellation(pass = PointerEventPass.Final)
                     } else {
                         val up = waitForUpOrCancellation(pass = PointerEventPass.Final)
-                        if (up != null && !up.isConsumed) {
-                            val tappedBlockId = memo.blocks
-                                .asReversed()
-                                .firstOrNull { block ->
-                                    blockBounds(
-                                        block = block,
-                                        canvasWidthPx = canvasWidthPx,
-                                        canvasHeightPx = canvasHeightPx,
-                                        progress = progress,
-                                        density = density
-                                    ).contains(up.position)
+                        if (up != null) {
+                            val upTouchedBlock = hitTestBlock(
+                                blocks = memo.blocks,
+                                tapPosition = up.position,
+                                canvasWidthPx = canvasWidthPx,
+                                canvasHeightPx = canvasHeightPx,
+                                progress = progress,
+                                density = density
+                            )
+                            val tappedBlock = upTouchedBlock ?: downTouchedBlock
+                            val consumedByLatex = up.isConsumed && tappedBlock?.type == MemoBlockType.Latex
+                            Log.d(
+                                PAPER_MEMO_CANVAS_TAG,
+                                "tap up: consumed=${up.isConsumed}, blockId=${tappedBlock?.id}, blockType=${tappedBlock?.type}, consumedByLatex=$consumedByLatex"
+                            )
+                            if (!up.isConsumed || consumedByLatex) {
+                                if (tappedBlock != null) {
+                                    Log.d(
+                                        PAPER_MEMO_CANVAS_TAG,
+                                        "onBlockTap dispatch: blockId=${tappedBlock.id}, blockType=${tappedBlock.type}"
+                                    )
+                                    onBlockTap(tappedBlock.id)
+                                } else {
+                                    Log.d(PAPER_MEMO_CANVAS_TAG, "onCanvasTap dispatch: no block hit")
+                                    onCanvasTap()
                                 }
-                                ?.id
-                            if (tappedBlockId != null) {
-                                onBlockTap(tappedBlockId)
+                                if (!up.isConsumed) {
+                                    up.consume()
+                                }
                             } else {
-                                onCanvasTap()
+                                Log.d(PAPER_MEMO_CANVAS_TAG, "tap ignored at up: consumed by child")
+                            }
+                        } else {
+                            Log.d(PAPER_MEMO_CANVAS_TAG, "tap cancelled before up")
+                            if (down.isConsumed && downTouchedBlock?.type == MemoBlockType.Latex) {
+                                Log.d(
+                                    PAPER_MEMO_CANVAS_TAG,
+                                    "fallback onBlockTap dispatch: blockId=${downTouchedBlock.id}, blockType=${downTouchedBlock.type}"
+                                )
+                                onBlockTap(downTouchedBlock.id)
                             }
                         }
                     }
@@ -1070,6 +1107,27 @@ private fun blockBounds(
     }
 }
 
+private fun hitTestBlock(
+    blocks: List<MemoBlock>,
+    tapPosition: Offset,
+    canvasWidthPx: Int,
+    canvasHeightPx: Int,
+    progress: Float,
+    density: Density
+): MemoBlock? {
+    return blocks
+        .asReversed()
+        .firstOrNull { block ->
+            blockBounds(
+                block = block,
+                canvasWidthPx = canvasWidthPx,
+                canvasHeightPx = canvasHeightPx,
+                progress = progress,
+                density = density
+            ).contains(tapPosition)
+        }
+}
+
 private fun estimateListBlockHeightPx(
     itemCount: Int,
     baseFontSizeSp: Float,
@@ -1155,3 +1213,6 @@ private fun textStyleFor(
         }
     )
 }
+
+private const val PAPER_MEMO_CANVAS_TAG = "PaperMemoCanvas"
+

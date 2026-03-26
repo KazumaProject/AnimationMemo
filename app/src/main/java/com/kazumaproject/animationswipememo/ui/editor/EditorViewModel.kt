@@ -296,9 +296,18 @@ class EditorViewModel(
     }
 
     fun openBlockEditor(blockId: String) {
+        val exists = draftState.value?.blocks?.any { it.id == blockId } == true
+        Log.d(
+            EDITOR_VIEW_MODEL_TAG,
+            "openBlockEditor start: blockId=$blockId, exists=$exists, selectedBefore=${selectedBlockIdState.value}, sheetVisibleBefore=${editorSheetVisibleState.value}"
+        )
         selectedBlockIdState.value = blockId
         editorSheetVisibleState.value = true
         toolPaletteVisibleState.value = false
+        Log.d(
+            EDITOR_VIEW_MODEL_TAG,
+            "openBlockEditor end: selectedAfter=${selectedBlockIdState.value}, sheetVisibleAfter=${editorSheetVisibleState.value}, toolPaletteVisibleAfter=${toolPaletteVisibleState.value}"
+        )
     }
 
     fun startBlockDrag(blockId: String) {

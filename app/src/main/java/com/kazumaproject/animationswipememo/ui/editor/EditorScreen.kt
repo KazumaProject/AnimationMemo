@@ -170,6 +170,13 @@ fun EditorScreen(
         }
     }
 
+    LaunchedEffect(uiState.isEditorSheetVisible, uiState.selectedBlockId, uiState.selectedBlock) {
+        Log.d(
+            EDITOR_SCREEN_TAG,
+            "sheet gate: isEditorSheetVisible=${uiState.isEditorSheetVisible}, selectedBlockId=${uiState.selectedBlockId}, selectedBlockExists=${uiState.selectedBlock != null}"
+        )
+    }
+
     val sheetOpacity = uiState.settings.editorSheetOpacity.coerceIn(0.45f, 1f)
     val sheetColor = MaterialTheme.colorScheme.surface.copy(alpha = sheetOpacity)
     val scrimAlpha = ((1f - sheetOpacity) * 0.22f) + 0.04f
@@ -239,6 +246,7 @@ fun EditorScreen(
     if (uiState.isEditorSheetVisible && uiState.selectedBlock != null) {
         ModalBottomSheet(
             onDismissRequest = {
+                Log.d(EDITOR_SCREEN_TAG, "ModalBottomSheet onDismissRequest")
                 dismissTransientInput()
                 viewModel.hideEditorSheet()
             },
@@ -383,6 +391,9 @@ fun EditorScreen(
                             )
                             return@awaitEachGesture
                         }
+                        if (!uiState.isEditorSheetVisible) {
+                            return@awaitEachGesture
+                        }
                         Log.d(EDITOR_SCREEN_TAG, "Global tap-dismiss triggered for editor sheet")
                         dismissTransientInput()
                         viewModel.clearSelection()
@@ -479,8 +490,15 @@ fun EditorScreen(
                     uiState = uiState,
                     darkTheme = isDarkTheme,
                     modifier = Modifier.padding(innerPadding),
-                    onOpenBlockEditor = viewModel::openBlockEditor,
+                    onOpenBlockEditor = { blockId ->
+                        Log.d(
+                            EDITOR_SCREEN_TAG,
+                            "onOpenBlockEditor received: blockId=$blockId, selectedBefore=${uiState.selectedBlockId}, sheetVisibleBefore=${uiState.isEditorSheetVisible}"
+                        )
+                        viewModel.openBlockEditor(blockId)
+                    },
                     onCanvasTap = {
+                        Log.d(EDITOR_SCREEN_TAG, "onCanvasTap: clear selection and hide sheet")
                         dismissTransientInput()
                         viewModel.clearSelection()
                         viewModel.hideEditorSheet()
