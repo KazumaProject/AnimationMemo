@@ -17,6 +17,7 @@ data class EditorUiState(
     val isDrawingLibraryVisible: Boolean = false,
     val isDrawingEditorVisible: Boolean = false,
     val codeFullscreenBlockId: String? = null,
+    val linkMetadataLoadingBlockId: String? = null,
     val isLoading: Boolean = true,
     val isWorking: Boolean = false,
     val isExistingMemo: Boolean = false

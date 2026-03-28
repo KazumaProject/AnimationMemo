@@ -12,6 +12,7 @@ import android.os.Build
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
+import android.text.TextUtils
 import com.kazumaproject.animationswipememo.domain.animation.MemoAnimationEngine
 import com.kazumaproject.animationswipememo.domain.model.fitContentSize
 import com.kazumaproject.animationswipememo.domain.model.MemoBlock
@@ -383,14 +384,44 @@ class MemoBitmapFrameRenderer(
             }
         }
 
+        val quotePayload = block.payload as? MemoBlockPayload.Quote
+        if (quotePayload != null) {
+            drawQuotePayloadBlock(
+                canvas = canvas,
+                cardRect = cardRect,
+                block = block,
+                progress = progress,
+                darkTheme = darkTheme,
+                text = quotePayload.text.ifBlank { "Quote" }
+            )
+            return
+        }
+
+        val tablePayload = block.payload as? MemoBlockPayload.Table
+        if (tablePayload != null) {
+            drawTablePayloadBlock(
+                canvas = canvas,
+                cardRect = cardRect,
+                block = block,
+                payload = tablePayload,
+                progress = progress,
+                darkTheme = darkTheme
+            )
+            return
+        }
+
         val text = when (val payload = block.payload) {
             is MemoBlockPayload.Heading -> payload.text
             is MemoBlockPayload.Toggle -> payload.title
-            is MemoBlockPayload.Quote -> payload.text
             is MemoBlockPayload.Code -> payload.code
             is MemoBlockPayload.LinkCard -> payload.title.ifBlank { payload.url }
-            is MemoBlockPayload.Table -> "${payload.rows.size} rows"
-            is MemoBlockPayload.Conversation -> "${payload.items.size} lines"
+            is MemoBlockPayload.Conversation -> payload.items
+                .take(4)
+                .joinToString("\n") { item ->
+                    val speaker = item.speaker.ifBlank { "?" }
+                    "$speaker: ${item.text.ifBlank { "..." }}"
+                }
+                .ifBlank { "Conversation" }
             is MemoBlockPayload.Latex -> payload.expression
             else -> block.text
         }.ifBlank { block.type.name }
@@ -401,6 +432,236 @@ class MemoBitmapFrameRenderer(
             progress = progress,
             darkTheme = darkTheme
         )
+    }
+
+    private fun drawQuotePayloadBlock(
+        canvas: Canvas,
+        cardRect: RectF,
+        block: MemoBlock,
+        progress: Float,
+        darkTheme: Boolean,
+        text: String
+    ) {
+        val frame = MemoAnimationEngine.frameAt(block.animationStyle, block.text, progress)
+        val frameAlpha = frame.alpha.coerceIn(0f, 1f)
+        val availableWidth = (cardRect.width() * block.widthFraction).coerceAtLeast(120f)
+        val minimumHeight = (cardRect.height() * block.heightFraction).coerceAtLeast(56f)
+        val innerPaddingStart = max(16f, availableWidth * 0.08f)
+        val innerPaddingEnd = max(10f, availableWidth * 0.05f)
+        val innerPaddingVertical = max(8f, cardRect.width() * 0.012f)
+        val textWidth = (availableWidth - innerPaddingStart - innerPaddingEnd).roundToInt().coerceAtLeast(40)
+        val resolvedTextColor = block.textStyle.resolvedTextColor(darkTheme)
+        val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = resolvedTextColor
+            alpha = (frameAlpha * 255f).toInt()
+            textSize = (cardRect.width() * 0.067f) * (block.textStyle.fontSize / 28f)
+            typeface = block.textStyle.toStyledTypeface(context)
+            isUnderlineText = block.textStyle.isUnderline
+            isSubpixelText = true
+            isFakeBoldText = block.textStyle.isBold && typeface.style == Typeface.NORMAL
+        }
+        val layout = StaticLayout.Builder
+            .obtain(text, 0, text.length, textPaint, textWidth)
+            .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+            .setLineSpacing(cardRect.width() * 0.008f, 1.08f)
+            .setEllipsize(TextUtils.TruncateAt.END)
+            .setMaxLines(4)
+            .setIncludePad(false)
+            .build()
+
+        val quoteHeight = max(minimumHeight, layout.height + (innerPaddingVertical * 2f))
+        val centerX = cardRect.left + block.normalizedX.coerceIn(0.08f, 0.92f) * cardRect.width()
+        val centerY = cardRect.top + block.normalizedY.coerceIn(0.12f, 0.9f) * cardRect.height()
+        val quoteLeft = centerX - (availableWidth / 2f)
+        val quoteTop = centerY - (quoteHeight / 2f)
+        val quoteRect = RectF(0f, 0f, availableWidth, quoteHeight)
+        val corner = max(10f, cardRect.width() * 0.018f)
+        val quoteBackgroundColor = if (darkTheme) 0x66434343 else 0x73DAD6CE
+        val quoteBarColor = if (darkTheme) 0xFF95A9F6.toInt() else 0xFF5B6ED6.toInt()
+        val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = applyAlpha(quoteBackgroundColor, frameAlpha)
+            style = Paint.Style.FILL
+        }
+        val barInset = innerPaddingVertical
+        val barX = max(8f, availableWidth * 0.04f)
+        val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = applyAlpha(quoteBarColor, frameAlpha)
+            style = Paint.Style.STROKE
+            strokeWidth = max(3f, cardRect.width() * 0.0045f)
+            strokeCap = Paint.Cap.ROUND
+        }
+
+        canvas.save()
+        canvas.translate(quoteLeft + frame.offsetXPx, quoteTop + frame.offsetYPx)
+        canvas.scale(frame.scale, frame.scale, availableWidth / 2f, quoteHeight / 2f)
+        canvas.rotate(frame.rotationDeg, availableWidth / 2f, quoteHeight / 2f)
+        canvas.drawRoundRect(quoteRect, corner, corner, backgroundPaint)
+        canvas.drawLine(
+            barX,
+            barInset,
+            barX,
+            quoteHeight - barInset,
+            barPaint
+        )
+        canvas.save()
+        canvas.translate(innerPaddingStart, innerPaddingVertical)
+        layout.draw(canvas)
+        canvas.restore()
+        canvas.restore()
+    }
+
+    private fun drawTablePayloadBlock(
+        canvas: Canvas,
+        cardRect: RectF,
+        block: MemoBlock,
+        payload: MemoBlockPayload.Table,
+        progress: Float,
+        darkTheme: Boolean
+    ) {
+        val previewRows = payload.rows.take(4)
+        val columnCount = (previewRows.maxOfOrNull { it.cells.size } ?: 0).coerceAtMost(4)
+        if (previewRows.isEmpty() || columnCount == 0) {
+            drawTextBlock(
+                canvas = canvas,
+                cardRect = cardRect,
+                block = block.copy(text = "Table"),
+                progress = progress,
+                darkTheme = darkTheme
+            )
+            return
+        }
+
+        val frame = MemoAnimationEngine.frameAt(block.animationStyle, block.text, progress)
+        val frameAlpha = frame.alpha.coerceIn(0f, 1f)
+        val tableWidth = (cardRect.width() * block.widthFraction).coerceAtLeast(140f)
+        val minHeight = (cardRect.height() * block.heightFraction).coerceAtLeast(64f)
+        val cellHeight = max(20f, cardRect.width() * 0.034f)
+        val tableHeight = max(minHeight, previewRows.size * cellHeight)
+        val centerX = cardRect.left + block.normalizedX.coerceIn(0.08f, 0.92f) * cardRect.width()
+        val centerY = cardRect.top + block.normalizedY.coerceIn(0.12f, 0.9f) * cardRect.height()
+        val left = centerX - tableWidth / 2f
+        val top = centerY - tableHeight / 2f
+        val cornerRadius = max(8f, cardRect.width() * 0.015f)
+        val rowCount = previewRows.size
+        val columnWidth = tableWidth / columnCount
+
+        val bodyColor = if (darkTheme) 0x9E2F2F2F.toInt() else 0xA7E9E6DF.toInt()
+        val rowHeaderColor = if (darkTheme) 0xA3474C73.toInt() else 0xB2CBD8FF.toInt()
+        val columnHeaderColor = if (darkTheme) 0xA33E6A67.toInt() else 0xB2BCEBE2.toInt()
+        val intersectionHeaderColor = if (darkTheme) 0xB658647A.toInt() else 0xC9DCCCF6.toInt()
+        val borderColor = if (darkTheme) 0xCCBBC2D8.toInt() else 0xCC5A6378.toInt()
+        val separatorColor = if (darkTheme) 0x88CDD3E4.toInt() else 0x88677285.toInt()
+
+        val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = applyAlpha(bodyColor, frameAlpha)
+            style = Paint.Style.FILL
+        }
+        val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = applyAlpha(borderColor, frameAlpha)
+            style = Paint.Style.STROKE
+            strokeWidth = max(1f, cardRect.width() * 0.0022f)
+        }
+        val separatorPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = applyAlpha(separatorColor, frameAlpha)
+            style = Paint.Style.STROKE
+            strokeWidth = max(1f, cardRect.width() * 0.0017f)
+        }
+        val rowHeaderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = applyAlpha(rowHeaderColor, frameAlpha)
+            style = Paint.Style.FILL
+        }
+        val columnHeaderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = applyAlpha(columnHeaderColor, frameAlpha)
+            style = Paint.Style.FILL
+        }
+        val intersectionHeaderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = applyAlpha(intersectionHeaderColor, frameAlpha)
+            style = Paint.Style.FILL
+        }
+
+        val baseTextSize = (cardRect.width() * 0.067f) * (block.textStyle.fontSize / 28f)
+        val cellTextSize = baseTextSize.coerceIn(12f, cellHeight * 0.52f)
+        val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = applyAlpha(block.textStyle.resolvedTextColor(darkTheme), frameAlpha)
+            textSize = cellTextSize
+            typeface = block.textStyle.toStyledTypeface(context)
+            isUnderlineText = block.textStyle.isUnderline
+            isSubpixelText = true
+        }
+        val headerTextPaint = TextPaint(textPaint).apply {
+            typeface = Typeface.create(typeface, Typeface.BOLD)
+        }
+        val textPaddingX = max(6f, tableWidth * 0.012f)
+        val availableTextWidth = (columnWidth - textPaddingX * 2f).toInt().coerceAtLeast(8)
+
+        canvas.save()
+        canvas.translate(left + frame.offsetXPx, top + frame.offsetYPx)
+        canvas.scale(frame.scale, frame.scale, tableWidth / 2f, tableHeight / 2f)
+        canvas.rotate(frame.rotationDeg, tableWidth / 2f, tableHeight / 2f)
+
+        val tableRect = RectF(0f, 0f, tableWidth, tableHeight)
+        canvas.drawRoundRect(tableRect, cornerRadius, cornerRadius, bodyPaint)
+
+        val clipPath = Path().apply {
+            addRoundRect(tableRect, cornerRadius, cornerRadius, Path.Direction.CW)
+        }
+        canvas.save()
+        canvas.clipPath(clipPath)
+
+        if (payload.hasHeaderRow) {
+            canvas.drawRect(0f, 0f, tableWidth, cellHeight, rowHeaderPaint)
+        }
+        if (payload.hasHeaderColumn) {
+            canvas.drawRect(0f, 0f, columnWidth, tableHeight, columnHeaderPaint)
+        }
+        if (payload.hasHeaderRow && payload.hasHeaderColumn) {
+            canvas.drawRect(0f, 0f, columnWidth, cellHeight, intersectionHeaderPaint)
+        }
+
+        repeat(columnCount - 1) { columnIndex ->
+            val x = (columnIndex + 1) * columnWidth
+            canvas.drawLine(x, 0f, x, tableHeight, separatorPaint)
+        }
+        repeat(rowCount - 1) { rowIndex ->
+            val y = (rowIndex + 1) * cellHeight
+            canvas.drawLine(0f, y, tableWidth, y, separatorPaint)
+        }
+
+        val textHeightOffset = (textPaint.descent() + textPaint.ascent()) / 2f
+        previewRows.forEachIndexed { rowIndex, row ->
+            repeat(columnCount) { columnIndex ->
+                val isHeaderCell =
+                    (payload.hasHeaderRow && rowIndex == 0) ||
+                        (payload.hasHeaderColumn && columnIndex == 0)
+                val paint = if (isHeaderCell) headerTextPaint else textPaint
+                val rawText = row.cells.getOrNull(columnIndex).orEmpty().ifBlank { "-" }
+                val clipped = TextUtils.ellipsize(rawText, paint, availableTextWidth.toFloat(), TextUtils.TruncateAt.END)
+                val x = columnIndex * columnWidth + textPaddingX
+                val y = (rowIndex * cellHeight) + (cellHeight / 2f) - textHeightOffset
+                canvas.drawText(clipped.toString(), x, y, paint)
+            }
+        }
+
+        val hasMoreRows = payload.rows.size > rowCount
+        val hasMoreColumns = payload.rows.any { it.cells.size > columnCount }
+        if (hasMoreRows || hasMoreColumns) {
+            canvas.drawText(
+                "…",
+                tableWidth - textPaddingX - textPaint.measureText("…"),
+                tableHeight - max(6f, cellHeight * 0.16f),
+                textPaint
+            )
+        }
+
+        canvas.restore()
+        canvas.drawRoundRect(tableRect, cornerRadius, cornerRadius, borderPaint)
+        canvas.restore()
+    }
+
+    private fun applyAlpha(argb: Int, alphaScale: Float): Int {
+        val baseAlpha = (argb ushr 24) and 0xFF
+        val scaledAlpha = (baseAlpha * alphaScale.coerceIn(0f, 1f)).roundToInt().coerceIn(0, 255)
+        return (argb and 0x00FFFFFF) or (scaledAlpha shl 24)
     }
 
     private fun loadBitmap(

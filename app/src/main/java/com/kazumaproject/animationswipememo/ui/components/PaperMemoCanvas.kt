@@ -5,17 +5,22 @@ import android.net.Uri
 import android.util.Log
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -59,12 +64,15 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.kazumaproject.animationswipememo.domain.animation.MemoAnimationEngine
+import com.kazumaproject.animationswipememo.domain.model.ConversationRole
 import com.kazumaproject.animationswipememo.domain.model.MemoBlock
 import com.kazumaproject.animationswipememo.domain.model.MemoBlockPayload
 import com.kazumaproject.animationswipememo.domain.model.MemoBlockType
@@ -100,7 +108,8 @@ fun PaperMemoCanvas(
     onToggleListItemChecked: (String, String) -> Unit,
     onToggleListItemExpanded: (String, String) -> Unit,
     onToggleBlockExpanded: (String) -> Unit,
-    onCodeBlockLongPress: (String) -> Unit
+    onCodeBlockLongPress: (String) -> Unit,
+    onLinkCardLongPress: (String) -> Unit
 ) {
     val density = LocalDensity.current
     val paper = memo.paperStyle.palette(darkTheme)
@@ -258,7 +267,8 @@ fun PaperMemoCanvas(
                     onBlockDragStart = onBlockDragStart,
                     onBlockDrag = onBlockDrag,
                     onBlockScale = onBlockScale,
-                    onCodeBlockLongPress = onCodeBlockLongPress
+                    onCodeBlockLongPress = onCodeBlockLongPress,
+                    onLinkCardLongPress = onLinkCardLongPress
                 )
 
                 MemoBlockType.Toggle -> ToggleBlockView(
@@ -661,8 +671,11 @@ private fun PayloadTextBlockView(
     onBlockDragStart: (String) -> Unit,
     onBlockDrag: (String, Float, Float) -> Unit,
     onBlockScale: (String, Float) -> Unit,
-    onCodeBlockLongPress: (String) -> Unit
+    onCodeBlockLongPress: (String) -> Unit,
+    onLinkCardLongPress: (String) -> Unit
 ) {
+    val linkPayload = block.payload as? MemoBlockPayload.LinkCard
+    val latexPayload = block.payload as? MemoBlockPayload.Latex
     val payloadText = when (val payload = block.payload) {
         is MemoBlockPayload.Heading -> payload.text.ifBlank { "Heading" }
         is MemoBlockPayload.Quote -> payload.text.ifBlank { "Quote" }
@@ -671,6 +684,7 @@ private fun PayloadTextBlockView(
         is MemoBlockPayload.Latex -> payload.expression.ifBlank { "LaTeX" }
         else -> block.text.ifBlank { block.type.name }
     }
+    val isQuotePayload = block.payload is MemoBlockPayload.Quote
     val textStyle = when (val payload = block.payload) {
         is MemoBlockPayload.Heading -> textStyleFor(block, glowRadius = 0f, darkTheme = darkTheme).copy(
             fontSize = when (payload.level) {
@@ -705,15 +719,28 @@ private fun PayloadTextBlockView(
         onBlockScale = onBlockScale,
         onLongPress = if (block.type == MemoBlockType.Code) {
             { onCodeBlockLongPress(block.id) }
+        } else if (linkPayload?.url?.isNotBlank() == true) {
+            { onLinkCardLongPress(linkPayload.url) }
         } else {
             null
         },
         content = {
-            if (block.payload is MemoBlockPayload.Latex) {
+            if (latexPayload != null) {
                 KatexBlockView(
-                    expression = (block.payload as MemoBlockPayload.Latex).expression.ifBlank { "x^2" },
+                    expression = latexPayload.expression.ifBlank { "x^2" },
                     darkTheme = darkTheme,
                     modifier = Modifier.fillMaxWidth()
+                )
+            } else if (isQuotePayload) {
+                QuotePayloadText(
+                    text = renderedText,
+                    textStyle = textStyle
+                )
+            } else if (linkPayload != null) {
+                LinkCardPayloadText(
+                    text = renderedText,
+                    textStyle = textStyle,
+                    faviconUrl = linkPayload.faviconUrl
                 )
             } else {
                 Text(
@@ -726,6 +753,74 @@ private fun PayloadTextBlockView(
             }
         }
     )
+}
+
+@Composable
+private fun LinkCardPayloadText(
+    text: AnnotatedString,
+    textStyle: TextStyle,
+    faviconUrl: String
+) {
+    val validFaviconUrl = faviconUrl.trim().takeIf { it.isHttpNetworkUrl() }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (validFaviconUrl != null) {
+            AsyncImage(
+                model = validFaviconUrl,
+                contentDescription = "Favicon",
+                modifier = Modifier
+                    .size(16.dp)
+                    .clip(RoundedCornerShape(3.dp)),
+                contentScale = ContentScale.Crop
+            )
+            Spacer(modifier = Modifier.size(6.dp))
+        }
+        Text(
+            text = text,
+            modifier = Modifier.fillMaxWidth(),
+            style = textStyle,
+            maxLines = 4,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun QuotePayloadText(
+    text: AnnotatedString,
+    textStyle: TextStyle
+) {
+    val quoteBackground = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+    val quoteBarColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(quoteBackground)
+            .drawBehind {
+                val inset = 8.dp.toPx()
+                val strokeWidth = 3.dp.toPx()
+                val x = inset
+                drawLine(
+                    color = quoteBarColor,
+                    start = Offset(x, inset),
+                    end = Offset(x, size.height - inset),
+                    strokeWidth = strokeWidth
+                )
+            }
+            .padding(start = 16.dp, end = 10.dp, top = 8.dp, bottom = 8.dp)
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.fillMaxWidth(),
+            style = textStyle,
+            maxLines = 4,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+        )
+    }
 }
 
 @Composable
@@ -827,11 +922,6 @@ private fun PayloadCardBlockView(
     onBlockDrag: (String, Float, Float) -> Unit,
     onBlockScale: (String, Float) -> Unit
 ) {
-    val summary = when (val payload = block.payload) {
-        is MemoBlockPayload.Table -> "${payload.rows.size} rows x ${(payload.rows.maxOfOrNull { it.cells.size } ?: 0)} cols"
-        is MemoBlockPayload.Conversation -> "${payload.items.size} lines"
-        else -> block.type.name
-    }
     TextBlockLike(
         block = block,
         selected = selected,
@@ -848,15 +938,170 @@ private fun PayloadCardBlockView(
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f), RoundedCornerShape(12.dp))
                     .padding(8.dp)
             ) {
-                Text(
-                    text = summary,
-                    style = textStyleFor(block, glowRadius = 0f, darkTheme = darkTheme),
-                    maxLines = 2,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                )
+                when (val payload = block.payload) {
+                    is MemoBlockPayload.Table -> TablePayloadPreview(
+                        payload = payload,
+                        textStyle = textStyleFor(block, glowRadius = 0f, darkTheme = darkTheme)
+                    )
+
+                    is MemoBlockPayload.Conversation -> ConversationPayloadPreview(
+                        payload = payload,
+                        textStyle = textStyleFor(block, glowRadius = 0f, darkTheme = darkTheme)
+                    )
+
+                    else -> Text(
+                        text = block.type.name,
+                        style = textStyleFor(block, glowRadius = 0f, darkTheme = darkTheme),
+                        maxLines = 2,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                }
             }
         }
     )
+}
+
+@Composable
+private fun TablePayloadPreview(
+    payload: MemoBlockPayload.Table,
+    textStyle: TextStyle
+) {
+    val previewRows = payload.rows.take(3)
+    val previewColumnCount = (previewRows.maxOfOrNull { it.cells.size } ?: 0).coerceAtMost(3)
+
+    if (previewRows.isEmpty() || previewColumnCount == 0) {
+        Text(
+            text = "Empty table",
+            style = textStyle,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+        )
+        return
+    }
+
+    val tableShape = RoundedCornerShape(10.dp)
+    val borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.9f)
+    val separatorColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.62f)
+    val bodyColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f)
+    val rowHeaderColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+    val columnHeaderColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.46f)
+    val intersectionHeaderColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.56f)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(bodyColor, tableShape)
+            .border(width = 1.dp, color = borderColor, shape = tableShape)
+            .clip(tableShape)
+    ) {
+        previewRows.forEachIndexed { rowIndex, row ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Min)
+            ) {
+                repeat(previewColumnCount) { columnIndex ->
+                    val isHeaderRowCell = payload.hasHeaderRow && rowIndex == 0
+                    val isHeaderColumnCell = payload.hasHeaderColumn && columnIndex == 0
+                    val isHeaderCell = isHeaderRowCell || isHeaderColumnCell
+                    val cellColor = when {
+                        isHeaderRowCell && isHeaderColumnCell -> intersectionHeaderColor
+                        isHeaderRowCell -> rowHeaderColor
+                        isHeaderColumnCell -> columnHeaderColor
+                        else -> Color.Transparent
+                    }
+                    Text(
+                        text = row.cells.getOrNull(columnIndex).orEmpty().ifBlank { "-" },
+                        modifier = Modifier
+                            .weight(1f)
+                            .background(cellColor)
+                            .padding(horizontal = 4.dp, vertical = 2.dp),
+                        style = textStyle.copy(fontWeight = if (isHeaderCell) FontWeight.SemiBold else textStyle.fontWeight),
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                    if (columnIndex < previewColumnCount - 1) {
+                        Spacer(
+                            modifier = Modifier
+                                .width(1.dp)
+                                .fillMaxHeight()
+                                .background(separatorColor)
+                        )
+                    }
+                }
+            }
+            if (rowIndex < previewRows.lastIndex) {
+                Spacer(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(separatorColor)
+                )
+            }
+        }
+
+        val hasMoreRows = payload.rows.size > previewRows.size
+        val hasMoreColumns = payload.rows.any { it.cells.size > previewColumnCount }
+        if (hasMoreRows || hasMoreColumns) {
+            Text(
+                text = "…",
+                modifier = Modifier.padding(start = 4.dp, top = 2.dp),
+                style = textStyle,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Clip
+            )
+        }
+    }
+}
+
+@Composable
+private fun ConversationPayloadPreview(
+    payload: MemoBlockPayload.Conversation,
+    textStyle: TextStyle
+) {
+    val previewItems = payload.items.take(4)
+    if (previewItems.isEmpty()) {
+        Text(
+            text = "Empty conversation",
+            style = textStyle,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+        )
+        return
+    }
+
+    Column {
+        previewItems.forEach { item ->
+            val bubbleColor = when (item.role) {
+                ConversationRole.Left -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                ConversationRole.Right -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f)
+                ConversationRole.Neutral -> MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
+            }
+            val textAlign = if (item.role == ConversationRole.Right) TextAlign.End else TextAlign.Start
+            val speaker = item.speaker.ifBlank { "?" }
+            val lineText = "$speaker: ${item.text.ifBlank { "..." }}"
+            Text(
+                text = lineText,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 2.dp)
+                    .background(bubbleColor, RoundedCornerShape(8.dp))
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
+                style = textStyle,
+                textAlign = textAlign,
+                maxLines = 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
+        }
+        if (payload.items.size > previewItems.size) {
+            Text(
+                text = "…",
+                style = textStyle,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Clip
+            )
+        }
+    }
 }
 
 @Composable
@@ -1252,5 +1497,11 @@ private fun textStyleFor(
 }
 
 private const val CODE_BLOCK_LONG_PRESS_TIMEOUT_MS = 450L
+
+private fun String.isHttpNetworkUrl(): Boolean {
+    val parsed = runCatching { Uri.parse(this) }.getOrNull() ?: return false
+    val scheme = parsed.scheme?.lowercase() ?: return false
+    return (scheme == "http" || scheme == "https") && !parsed.host.isNullOrBlank()
+}
 private const val PAPER_MEMO_CANVAS_TAG = "PaperMemoCanvas"
 

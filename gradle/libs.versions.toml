@@ -18,6 +18,8 @@ gifencoder = "0.10.1"
 coreSplashscreen = "1.0.1"
 androidideTreesitter = "4.3.2"
 desugarJdkLibs = "2.1.5"
+jsoup = "1.18.3"
+coilCompose = "2.7.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -53,6 +55,8 @@ androidide-treesitter-xml = { group = "com.itsaky.androidide.treesitter", name =
 androidide-treesitter-c = { group = "com.itsaky.androidide.treesitter", name = "tree-sitter-c", version.ref = "androidideTreesitter" }
 androidide-treesitter-cpp = { group = "com.itsaky.androidide.treesitter", name = "tree-sitter-cpp", version.ref = "androidideTreesitter" }
 android-tools-desugar-jdk-libs = { group = "com.android.tools", name = "desugar_jdk_libs", version.ref = "desugarJdkLibs" }
+jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
+coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coilCompose" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
